@@ -1,12 +1,18 @@
-"""Processing statistics and SSE log streaming endpoints."""
+"""Processing statistics and SSE log streaming endpoints.
+
+WARNING: Auth is declared per-endpoint in this file (not router-level).
+Every new endpoint MUST include an explicit `Depends(require_auth)` or
+`Depends(require_auth_or_query)` to avoid accidentally exposing data.
+"""
 
 import asyncio
 import json
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlmodel import select, func
 from datetime import datetime, timedelta, timezone
 
+from ..auth import require_auth, require_auth_or_query
 from ..database import get_async_session
 from ..models import ProcessingLog
 from ..schemas import DailyStatsItem, RecentLogItem, StatsResponse
@@ -16,7 +22,7 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
 @router.delete("/reset")
-async def reset_stats():
+async def reset_stats(user: dict = Depends(require_auth)):
     try:
         async with get_async_session() as session:
             from sqlalchemy import delete
@@ -29,7 +35,7 @@ async def reset_stats():
 
 
 @router.get("", response_model=StatsResponse)
-async def get_stats():
+async def get_stats(user: dict = Depends(require_auth)):
     async with get_async_session() as session:
         total_stmt = select(func.count(ProcessingLog.id))
         total = await session.exec(total_stmt)
@@ -60,11 +66,15 @@ async def get_stats():
         return StatsResponse(
             total_processed=total,
             success_rate=round((success / total * 100) if total > 0 else 0, 2),
+            success=success,
+            failed=failed,
+            skipped=skipped,
+            avg_processing_time_ms=avg_time or 0.0,
         )
 
 
 @router.get("/daily", response_model=list[DailyStatsItem])
-async def get_daily_stats(days: int = 7):
+async def get_daily_stats(days: int = 7, user: dict = Depends(require_auth)):
     days = min(max(days, 1), 365)
     async with get_async_session() as session:
         start_date = datetime.now(timezone.utc) - timedelta(days=days)
@@ -96,7 +106,7 @@ async def get_daily_stats(days: int = 7):
 
 
 @router.get("/recent", response_model=list[RecentLogItem])
-async def get_recent_logs(limit: int = 20):
+async def get_recent_logs(limit: int = 20, user: dict = Depends(require_auth)):
     limit = min(max(limit, 1), 1000)
     async with get_async_session() as session:
         stmt = (
@@ -113,23 +123,23 @@ async def get_recent_logs(limit: int = 20):
                 document_id=log.document_id,
                 document_title=log.document_title,
                 status=log.status,
-                provider=log.llm_provider,
-                model=log.llm_model,
+                llm_provider=log.llm_provider,
+                llm_model=log.llm_model,
                 error_message=log.error_message,
                 processing_time_ms=log.processing_time_ms,
-                created_at=log.processed_at.isoformat() if log.processed_at else None,
+                processed_at=log.processed_at.isoformat() if log.processed_at else None,
             )
             for log in logs
         ]
 
 
 @router.get("/logs")
-async def get_logs():
+async def get_logs(user: dict = Depends(require_auth)):
     return {"lines": get_history()}
 
 
 @router.get("/logs/stream")
-async def stream_logs():
+async def stream_logs(user: dict = Depends(require_auth_or_query)):
     async def event_gen():
         for line in get_history():
             yield f"data: {json.dumps(line)}\n\n"
@@ -153,7 +163,7 @@ async def stream_logs():
 
 
 @router.get("/document/{doc_id}")
-async def get_log_by_document(doc_id: int):
+async def get_log_by_document(doc_id: int, user: dict = Depends(require_auth)):
     async with get_async_session() as session:
         stmt = (
             select(ProcessingLog)

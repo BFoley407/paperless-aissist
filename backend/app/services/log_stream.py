@@ -75,10 +75,15 @@ def unsubscribe(q: asyncio.Queue) -> None:
         pass
 
 
+_NOISY_PREFIXES = ("httpcore.", "httpx.")
+
+
 class BroadcastHandler(logging.Handler):
     """Logging handler that feeds into the in-memory broadcast system."""
 
     def emit(self, record: logging.LogRecord) -> None:
+        if record.name.startswith(_NOISY_PREFIXES):
+            return
         line = self.format(record)
         try:
             loop = asyncio.get_running_loop()

@@ -27,11 +27,34 @@ _broadcast_handler = BroadcastHandler()
 _broadcast_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 )
-logging.basicConfig(
-    level=logging.INFO, handlers=[logging.StreamHandler(), _broadcast_handler]
-)
-for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-    logging.getLogger(_name).addHandler(_broadcast_handler)
+
+def _attach_broadcast_handler():
+    """Re-attach broadcast handler after uvicorn replaces logging config."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    if _broadcast_handler not in root_logger.handlers:
+        root_logger.addHandler(_broadcast_handler)
+    for _name in (
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "app.services.processor",
+        "app.services.llm_handler",
+        "app.services.paperless",
+        "app.services.vision",
+        "app.services.scheduler",
+        "app.routers.config",
+        "app.routers.documents",
+        "app.routers.scheduler",
+    ):
+        _logger = logging.getLogger(_name)
+        _logger.disabled = False
+        _logger.setLevel(logging.INFO)
+        # Remove duplicate BroadcastHandler from child loggers;
+        # they propagate to root which already has it.
+        for h in list(_logger.handlers):
+            if isinstance(h, BroadcastHandler):
+                _logger.removeHandler(h)
 
 
 def get_config_value(key: str, default: str = "*") -> str:
@@ -58,6 +81,7 @@ async def lifespan(app: FastAPI):
     shutdown (LLM handler and Paperless client cleanup).
     """
     run_migrations()
+    _attach_broadcast_handler()
 
     from .database import get_session
     from .models import Prompt, Config
@@ -141,7 +165,7 @@ app.include_router(auth_router.router)
 app.include_router(config.router, dependencies=_auth_dep)
 app.include_router(prompts.router, dependencies=_auth_dep)
 app.include_router(documents.router, dependencies=_auth_dep)
-app.include_router(stats.router, dependencies=_auth_dep)
+app.include_router(stats.router)
 app.include_router(scheduler.router, dependencies=_auth_dep)
 
 

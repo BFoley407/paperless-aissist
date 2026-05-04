@@ -55,11 +55,11 @@ class RecentLogItem(BaseModel):
     document_id: Optional[int] = None
     document_title: Optional[str] = None
     status: str
-    provider: Optional[str] = None
-    model: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
-    created_at: Optional[str] = None
+    processed_at: Optional[str] = None
 
 
 class StatsResponse(BaseModel):
@@ -67,6 +67,10 @@ class StatsResponse(BaseModel):
 
     total_processed: int
     success_rate: float
+    success: int = 0
+    failed: int = 0
+    skipped: int = 0
+    avg_processing_time_ms: float = 0.0
 
 
 class PromptResponse(BaseModel):

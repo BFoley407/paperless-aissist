@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { configApi } from '../api/client'
@@ -25,7 +24,6 @@ type TabId = typeof TAB_CONFIG[number]['id']
 
 export default function ConfigPanel() {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<TabId>('paperless')
   const [configs, setConfigs] = useState<Record<string, string>>({
     paperless_url: '',
@@ -112,16 +110,38 @@ export default function ConfigPanel() {
       setSaving(false)
       return
     }
-    const entries = Object.entries(configs).filter(([, value]) => value !== '')
+
+    // Flush all debounced saves first to avoid race conditions
+    for (const [, timeoutId] of saveTimeoutsRef.current) {
+      clearTimeout(timeoutId)
+    }
+    saveTimeoutsRef.current.clear()
+
+    const entries = Object.entries(configs).filter(([key, value]) => value !== '' && key !== 'auth_enabled')
     const results = await Promise.allSettled(
       entries.map(([key, value]) => configApi.set(key, value)),
     )
-    await configApi.set('auth_enabled', configs.auth_enabled)
+
+    // Save auth_enabled last so other saves aren't blocked by new auth requirement
+    if (configs.auth_enabled) {
+      try {
+        await configApi.set('auth_enabled', configs.auth_enabled)
+      } catch (e) {
+        console.error('Failed to save auth_enabled:', e)
+        toast.error(t('config.saveFailed'))
+        setSaving(false)
+        return
+      }
+    }
+
     if (configs.auth_enabled === 'true') {
-      navigate('/login')
+      // Clear token and force full page reload to reset auth state
+      localStorage.removeItem('paperless_token')
       setSaving(false)
+      window.location.href = '/login'
       return
     }
+
     const failures = results.filter((r) => r.status === 'rejected')
     if (failures.length > 0) {
       toast.error(t('config.saveFailed'))

@@ -13,6 +13,7 @@ from ..services.scheduler import (
     try_trigger_processing,
     process_tagged_documents as process_tagged_with_state,
     process_modular_tagged_documents as process_modular_with_state,
+    _set_processing,
     _clear_processing,
 )
 from ..constants import CHAT_CONTENT_LIMIT, CHAT_HISTORY_LIMIT
@@ -33,16 +34,20 @@ async def process_document(data: ProcessRequest = Body(...)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    processor = DocumentProcessor(paperless)
+    _set_processing(data.document_id)
+    try:
+        processor = DocumentProcessor(paperless)
 
-    result = await processor.process_document(data.document_id, force=data.force)
+        result = await processor.process_document(data.document_id, force=data.force)
 
-    if not result.get("success"):
-        raise HTTPException(
-            status_code=500, detail=result.get("error", "Processing failed")
-        )
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500, detail=result.get("error", "Processing failed")
+            )
 
-    return result
+        return result
+    finally:
+        _clear_processing()
 
 
 @router.get("/search")

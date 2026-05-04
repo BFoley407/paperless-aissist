@@ -484,6 +484,9 @@ Available Custom Fields: [{custom_fields_list}]"""
         start_time = time.time()
 
         doc = await self.paperless.get_document(doc_id)
+        doc_title = doc.get("title", "Untitled")
+        logger.info(f"Processing document {doc_id}: {doc_title}")
+
         metadata = await self._fetch_metadata()
         all_tags = metadata["tags"]
         tag_id_to_name = {t["id"]: t["name"] for t in all_tags}
@@ -537,6 +540,7 @@ Available Custom Fields: [{custom_fields_list}]"""
                 if not step_instance.can_handle(doc_tag_names):
                     continue
 
+                logger.info(f"  → Step {step_instance.name} for doc {doc_id}")
                 step_start = time.time()
                 try:
                     result = await step_instance.execute(ctx)
@@ -546,14 +550,17 @@ Available Custom Fields: [{custom_fields_list}]"""
                         add_step(
                             step_instance.name, "failed", duration_ms, result.error
                         )
+                        logger.info(f"    ✗ {step_instance.name} failed: {result.error}")
                     elif result.data:
                         add_step(step_instance.name, "completed", duration_ms)
+                        logger.info(f"    ✓ {step_instance.name} completed ({duration_ms}ms)")
                         await step_instance.update_metadata(ctx, result)
                         accumulated_update.update(result.data)
                         if "title" in result.data:
                             ctx.ocr_text = ctx.ocr_text or ""
                     else:
                         add_step(step_instance.name, "completed", duration_ms)
+                        logger.info(f"    ✓ {step_instance.name} completed ({duration_ms}ms)")
 
                 except Exception as step_error:
                     duration_ms = int((time.time() - step_start) * 1000)
@@ -722,6 +729,8 @@ Available Custom Fields: [{custom_fields_list}]"""
                     error_detail = f"{error_detail}: {e.response.text}"
                 except Exception:
                     pass
+            processing_time_ms = int((time.time() - start_time) * 1000)
+            logger.info(f"  ✗ Document {doc_id} processing FAILED after {processing_time_ms}ms: {error_detail}")
             await self._log_processing(
                 doc_id=doc_id,
                 doc_title=doc.get("title"),
@@ -730,7 +739,7 @@ Available Custom Fields: [{custom_fields_list}]"""
                 model=llm.model,
                 llm_response=None,
                 error_message=f"Paperless update failed: {error_detail}",
-                processing_time_ms=int((time.time() - start_time) * 1000),
+                processing_time_ms=processing_time_ms,
                 log_id=log_id,
             )
             return {
@@ -738,13 +747,14 @@ Available Custom Fields: [{custom_fields_list}]"""
                 "document_id": doc_id,
                 "title": doc.get("title"),
                 "updates": {},
-                "processing_time_ms": int((time.time() - start_time) * 1000),
+                "processing_time_ms": processing_time_ms,
                 "steps": step_records,
                 "proposed_changes": proposed,
                 "error": f"Paperless update failed: {error_detail}",
             }
 
         processing_time_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"  ✓ Document {doc_id} processing complete ({processing_time_ms}ms)")
         await self._log_processing(
             doc_id=doc_id,
             doc_title=doc.get("title"),

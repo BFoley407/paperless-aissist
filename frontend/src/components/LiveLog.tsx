@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, PauseCircle, PlayCircle } from 'lucide-react'
+import { fetchEventSource } from '../api/fetchEventSource'
+
+const MAX_LINES = 500
+const BATCH_MS = 250
 
 function lineColor(line: string): string {
   const upper = line.toUpperCase()
@@ -18,33 +22,106 @@ export default function LiveLog() {
   const [paused, setPaused] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pausedRef = useRef(false)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectDelayRef = useRef(1000)
+  const mountedRef = useRef(true)
+  const pendingRef = useRef<string[]>([])
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   pausedRef.current = paused
 
-  useEffect(() => {
-    const es = new EventSource('/api/stats/logs/stream')
-
-    es.onopen = () => setConnected(true)
-    es.onerror = () => setConnected(false)
-
-    es.onmessage = (e) => {
-      try {
-        const line: string = JSON.parse(e.data)
-        setLines((prev) => [...prev.slice(-4999), line])
-      } catch {
-        // ignore malformed
-      }
-    }
-
-    return () => {
-      es.close()
-      setConnected(false)
-    }
+  const flushPending = useCallback(() => {
+    if (pendingRef.current.length === 0) return
+    const batch = pendingRef.current
+    pendingRef.current = []
+    setLines((prev) => {
+      const merged = [...prev, ...batch]
+      return merged.length > MAX_LINES ? merged.slice(-MAX_LINES) : merged
+    })
   }, [])
 
   useEffect(() => {
+    mountedRef.current = true
+    const token = localStorage.getItem('paperless_token')
+    const headers: Record<string, string> = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    let activeController: AbortController | null = null
+
+    const connect = () => {
+      activeController = fetchEventSource({
+        url: '/api/stats/logs/stream',
+        headers,
+        onopen: () => {
+          if (!mountedRef.current) return
+          setConnected(true)
+          setLines([])
+          pendingRef.current = []
+          reconnectDelayRef.current = 1000
+        },
+        onerror: () => {
+          if (!mountedRef.current) return
+          setConnected(false)
+          scheduleReconnect()
+        },
+        onclose: () => {
+          if (!mountedRef.current) return
+          setConnected(false)
+          scheduleReconnect()
+        },
+        onmessage: (data) => {
+          if (!mountedRef.current) return
+          try {
+            const line = JSON.parse(data)
+            if (typeof line === 'string') {
+              pendingRef.current.push(line)
+              if (!batchTimerRef.current) {
+                batchTimerRef.current = setTimeout(() => {
+                  batchTimerRef.current = null
+                  flushPending()
+                }, BATCH_MS)
+              }
+            }
+          } catch {
+            // ignore malformed
+          }
+        },
+      })
+    }
+
+    const scheduleReconnect = () => {
+      if (!mountedRef.current) return
+      if (reconnectTimeoutRef.current) return
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null
+        connect()
+        reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 30000)
+      }, reconnectDelayRef.current)
+    }
+
+    connect()
+
+    return () => {
+      mountedRef.current = false
+      if (batchTimerRef.current) {
+        clearTimeout(batchTimerRef.current)
+        batchTimerRef.current = null
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      if (activeController) {
+        activeController.abort()
+      }
+    }
+  }, [flushPending])
+
+  useEffect(() => {
     if (!paused && bottomRef.current) {
-      bottomRef.current.scrollIntoView({ behavior: 'smooth' })
+      bottomRef.current.scrollIntoView({ block: 'end' })
     }
   }, [lines, paused])
 
