@@ -37,7 +37,6 @@ export default function ConfigPanel() {
     llm_model: 'qwen2.5:7b',
     llm_api_base: 'http://localhost:11434',
     enable_vision: 'false',
-    enable_fallback_ocr: 'false',
     llm_provider_vision: 'ollama',
     llm_model_vision: 'qwen2.5vl:7b',
     llm_api_base_vision: 'http://localhost:11434',

@@ -86,8 +86,6 @@
     "apiKeyPlaceholderCloud": "xai-... / sk-...",
     "visionOcr": "Vision / OCR",
     "visionOcrHint": "Visionsmodell zur OCR-Erkennung von Dokumentseiten verwenden",
-    "fallbackOcr": "Fallback-OCR (Tesseract)",
-    "fallbackOcrHint": "Lokales Tesseract OCR verwenden, wenn das Visionsmodell fehlschlägt",
     "visionModelSection": "Vision-Modell Einstellungen",
     "visionModel": "Vision-Modell",
     "schedulerSection": "Automatische Verarbeitung",

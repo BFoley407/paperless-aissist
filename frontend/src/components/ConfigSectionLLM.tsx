@@ -138,18 +138,6 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
           <p className={hintClass}>{t('config.visionOcrHint')}</p>
         </div>
         <div>
-          <label className={labelClass}>{t('config.fallbackOcr')}</label>
-          <select
-            value={config.enable_fallback_ocr || 'false'}
-            onChange={(e) => handleChange('enable_fallback_ocr', e.target.value)}
-            className={fieldClass}
-          >
-            <option value="false">{t('common.disabled')}</option>
-            <option value="true">{t('common.enabled')}</option>
-          </select>
-          <p className={hintClass}>{t('config.fallbackOcrHint')}</p>
-        </div>
-        <div>
           <label className={labelClass}>{t('config.llmTimeout')}</label>
           <input
             type="number"

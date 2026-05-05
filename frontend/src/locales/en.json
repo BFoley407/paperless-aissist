@@ -86,8 +86,6 @@
     "apiKeyPlaceholderCloud": "xai-... / sk-...",
     "visionOcr": "Vision / OCR",
     "visionOcrHint": "Use a vision model to OCR document images",
-    "fallbackOcr": "Fallback OCR (Tesseract)",
-    "fallbackOcrHint": "Use local Tesseract OCR if vision model fails",
     "visionModelSection": "Vision Model Settings",
     "visionModel": "Vision Model",
     "schedulerSection": "Auto-Processing Scheduler",
