@@ -56,6 +56,7 @@ export default function ConfigPanel() {
   })
   const [secretsSet, setSecretsSet] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
+  const [initialAuthEnabled, setInitialAuthEnabled] = useState<'true' | 'false'>('false')
 
   const saveTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
 
@@ -71,6 +72,7 @@ export default function ConfigPanel() {
       const { data, secrets_set } = res.data as { data: Record<string, string>; secrets_set: string[] }
       setConfigs((prev) => ({ ...prev, ...data }))
       setSecretsSet(secrets_set || [])
+      setInitialAuthEnabled((data.auth_enabled as 'true' | 'false') || 'false')
     } catch (error) {
       console.error('Failed to load configs:', error)
     }
@@ -104,6 +106,8 @@ export default function ConfigPanel() {
 
   const handleSaveAll = async () => {
     setSaving(true)
+    const shouldForceLogin = initialAuthEnabled !== 'true' && configs.auth_enabled === 'true'
+
     if (configs.auth_enabled === 'true' && !configs.paperless_url.trim()) {
       toast.warning(t('config.authRequiresPaperless'))
       setSaving(false)
@@ -133,13 +137,15 @@ export default function ConfigPanel() {
       }
     }
 
-    if (configs.auth_enabled === 'true') {
+    if (shouldForceLogin) {
       // Clear token and force full page reload to reset auth state
       localStorage.removeItem('paperless_token')
       setSaving(false)
       window.location.href = '/login'
       return
     }
+
+    setInitialAuthEnabled((configs.auth_enabled as 'true' | 'false') || 'false')
 
     const failures = results.filter((r) => r.status === 'rejected')
     if (failures.length > 0) {
@@ -156,12 +162,10 @@ export default function ConfigPanel() {
         return <ConfigSectionPaperless config={configs} onSave={handleSave} secretsSet={secretsSet} />
       case 'llm':
         return (
-          <>
+          <div className="space-y-4">
             <ConfigSectionLLM config={configs} onSave={handleSave} secretsSet={secretsSet} />
-            {configs.enable_vision === 'true' && (
-              <ConfigSectionVision config={configs} onSave={handleSave} secretsSet={secretsSet} />
-            )}
-          </>
+            <ConfigSectionVision config={configs} onSave={handleSave} secretsSet={secretsSet} />
+          </div>
         )
       case 'scheduler':
         return <ConfigSectionScheduler config={configs} onSave={handleSave} />

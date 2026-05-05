@@ -20,6 +20,7 @@ export default function LiveLog() {
   const [lines, setLines] = useState<string[]>([])
   const [connected, setConnected] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [levelFilter, setLevelFilter] = useState<'all' | 'error' | 'warning' | 'info'>('all')
   const bottomRef = useRef<HTMLDivElement>(null)
   const pausedRef = useRef(false)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -125,6 +126,16 @@ export default function LiveLog() {
     }
   }, [lines, paused])
 
+  const visibleLines = lines.filter((line) => {
+    const upper = line.toUpperCase()
+    if (levelFilter === 'error') return upper.includes('ERROR')
+    if (levelFilter === 'warning') return upper.includes('WARN') || upper.includes('WARNING')
+    if (levelFilter === 'info') {
+      return !upper.includes('ERROR') && !upper.includes('WARN') && !upper.includes('WARNING')
+    }
+    return true
+  })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -138,7 +149,20 @@ export default function LiveLog() {
             {connected ? t('logs.live') : t('logs.disconnected')}
           </span>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          {(['all', 'error', 'warning', 'info'] as const).map((level) => (
+            <button
+              key={level}
+              onClick={() => setLevelFilter(level)}
+              className={`px-3 py-2 text-xs rounded-lg border ${
+                levelFilter === level
+                  ? 'bg-blue-50 border-blue-300 text-blue-700'
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {t(`logs.filter.${level}`)}
+            </button>
+          ))}
           <button
             onClick={() => setPaused((p) => !p)}
             className="flex items-center gap-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
@@ -160,11 +184,18 @@ export default function LiveLog() {
         className="bg-gray-900 rounded-lg font-mono text-xs overflow-y-auto"
         style={{ height: 'calc(100vh - 200px)' }}
       >
+        {!connected && (
+          <div className="px-4 py-2 bg-yellow-500/10 border-b border-yellow-500/30 text-yellow-200">
+            {t('logs.reconnecting')}
+          </div>
+        )}
         {lines.length === 0 ? (
           <p className="text-gray-500 p-4">{t('logs.emptyState')}</p>
+        ) : visibleLines.length === 0 ? (
+          <p className="text-gray-500 p-4">{t('logs.noEntriesForFilter')}</p>
         ) : (
           <div className="p-4 space-y-0.5">
-            {lines.map((line, i) => (
+            {visibleLines.map((line, i) => (
               <div key={i} className={`whitespace-pre-wrap break-all leading-5 ${lineColor(line)}`}>
                 {line}
               </div>

@@ -6,7 +6,8 @@
     "chat": "Chat",
     "configuration": "Konfiguration",
     "prompts": "Prompts",
-    "logs": "System-Protokolle"
+    "logs": "System-Protokolle",
+    "openMenu": "Menü öffnen"
   },
   "common": {
     "loading": "Laden...",
@@ -41,7 +42,12 @@
     "success": "Erfolgreich",
     "failed": "Fehlgeschlagen",
     "skipped": "Übersprungen",
+    "all": "Alle",
+    "completed": "Abgeschlossen",
     "docFallback": "Dok. #{{id}}",
+    "emptyState": "Noch keine Verarbeitungsdaten vorhanden.",
+    "loadFailed": "Dashboard-Daten konnten nicht geladen werden",
+    "noLogsForFilter": "Keine Protokolleinträge für diesen Filter.",
     "confirmReset": "Alle Verarbeitungsprotokolle löschen? Dies kann nicht rückgängig gemacht werden.",
     "resetFailed": "Statistiken konnten nicht zurückgesetzt werden"
   },
@@ -88,6 +94,7 @@
     "visionOcrHint": "Visionsmodell zur OCR-Erkennung von Dokumentseiten verwenden",
     "visionModelSection": "Vision-Modell Einstellungen",
     "visionModel": "Vision-Modell",
+    "visionSectionDisabledHint": "Vision OCR ist deaktiviert, kann hier aber bereits vorkonfiguriert werden.",
     "schedulerSection": "Automatische Verarbeitung",
     "schedulerRunning": "Aktiv",
     "schedulerStopped": "Gestoppt",
@@ -209,6 +216,12 @@
     "updateCustomFields": "Benutzerdefinierte Felder:",
     "updateContent": "Inhalt:",
     "noDocuments": "Keine Dokumente zu verarbeiten",
+    "noDocumentsHint": "Markieren Sie Dokumente in Paperless mit dem Prozess-Tag, um die Warteschlange zu füllen.",
+    "queueCount": "Warteschlange",
+    "schedulerState": "Scheduler",
+    "schedulerNextLabel": "Nächster Lauf",
+    "notScheduled": "Nicht geplant",
+    "noStepsForFilter": "Keine Schritte entsprechen diesem Filter.",
     "colDocument": "Dokument",
     "colId": "ID",
     "colCreated": "Erstellt",
@@ -227,7 +240,15 @@
     "pause": "Pause",
     "resume": "Fortsetzen",
     "clear": "Leeren",
-    "emptyState": "Noch keine Protokolleinträge."
+    "emptyState": "Noch keine Protokolleinträge.",
+    "reconnecting": "Verbindung verloren. Wiederverbindung läuft…",
+    "noEntriesForFilter": "Keine Protokolleinträge für diesen Filter.",
+    "filter": {
+      "all": "Alle",
+      "error": "Fehler",
+      "warning": "Warnung",
+      "info": "Info"
+    }
   },
   "chat": {
     "title": "Dokument-Chat",

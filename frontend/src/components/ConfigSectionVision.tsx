@@ -4,6 +4,7 @@ import { fieldClass, labelClass, hintClass } from './fieldStyles'
 
 export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectionProps) {
   const { t } = useTranslation()
+  const visionEnabled = (config.enable_vision || 'false') === 'true'
 
   const handleChange = async (key: string, value: string) => {
     await onSave(key, value)
@@ -27,10 +28,18 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
   }
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 space-y-4">
-      <div className="flex items-center gap-2 border-b pb-3 mb-4">
-        <h3 className="text-sm font-semibold text-gray-700">{t('config.visionModelSection')}</h3>
+    <div className="bg-blue-50/50 border border-blue-100 rounded-lg shadow-sm p-6 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 pb-3 mb-4">
+        <h3 className="text-sm font-semibold text-gray-800">{t('config.visionModelSection')}</h3>
+        <span
+          className={`text-xs px-2 py-1 rounded-full ${
+            visionEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          {visionEnabled ? t('common.enabled') : t('common.disabled')}
+        </span>
       </div>
+      {!visionEnabled && <p className={hintClass}>{t('config.visionSectionDisabledHint')}</p>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>

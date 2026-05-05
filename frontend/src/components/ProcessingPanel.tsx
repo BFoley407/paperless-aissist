@@ -56,6 +56,7 @@ export default function ProcessingPanel() {
   const [result, setResult] = useState<ProcessingResult | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null)
+  const [resultStepFilter, setResultStepFilter] = useState<'all' | 'failed' | 'completed'>('all')
 
   useEffect(() => {
     loadDocuments()
@@ -149,6 +150,10 @@ export default function ProcessingPanel() {
   }
 
   const isCurrentlyProcessing = schedulerStatus?.is_processing || processing
+  const filteredSteps =
+    resultStepFilter === 'all'
+      ? result?.steps || []
+      : (result?.steps || []).filter((step) => step.status === resultStepFilter)
 
   return (
     <div className="space-y-6">
@@ -211,6 +216,27 @@ export default function ProcessingPanel() {
 
       {error && <div className="p-4 bg-yellow-50 text-yellow-700 rounded-lg">{error}</div>}
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{t('processing.queueCount')}</p>
+          <p className="text-2xl font-semibold text-gray-900">{documents.length}</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{t('processing.schedulerState')}</p>
+          <p className="text-sm font-medium text-gray-800">
+            {schedulerStatus?.running ? t('config.schedulerRunning') : t('config.schedulerStopped')}
+          </p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wide">{t('processing.schedulerNextLabel')}</p>
+          <p className="text-sm font-medium text-gray-800">
+            {schedulerStatus?.next_run
+              ? new Date(schedulerStatus.next_run).toLocaleTimeString()
+              : t('processing.notScheduled')}
+          </p>
+        </div>
+      </div>
+
       {showResult && result && (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
@@ -239,8 +265,24 @@ export default function ProcessingPanel() {
               </span>
             </div>
 
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(['all', 'failed', 'completed'] as const).map((status) => (
+                <button
+                  key={status}
+                  onClick={() => setResultStepFilter(status)}
+                  className={`text-xs px-2.5 py-1 rounded-full border ${
+                    resultStepFilter === status
+                      ? 'bg-blue-50 border-blue-300 text-blue-700'
+                      : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {status === 'all' ? t('dashboard.all') : t(`dashboard.${status}`)}
+                </button>
+              ))}
+            </div>
+
             <div className="space-y-2">
-              {result.steps.map((step, index) => (
+              {filteredSteps.map((step, index) => (
                 <div
                   key={index}
                   className={`flex items-center justify-between px-3 py-2 rounded ${
@@ -262,6 +304,9 @@ export default function ProcessingPanel() {
                 </div>
               ))}
             </div>
+            {filteredSteps.length === 0 && (
+              <p className="text-sm text-gray-500">{t('processing.noStepsForFilter')}</p>
+            )}
 
             {result.proposed_changes && Object.keys(result.proposed_changes).length > 0 && (
               <div className="mt-4 pt-4 border-t">
@@ -318,7 +363,10 @@ export default function ProcessingPanel() {
       {loading ? (
         <div className="text-center py-8 text-gray-500">{t('common.loading')}</div>
       ) : documents.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">{t('processing.noDocuments')}</div>
+        <div className="bg-white rounded-lg border border-gray-200 text-center py-10 px-4 text-gray-500">
+          <p className="font-medium text-gray-700 mb-1">{t('processing.noDocuments')}</p>
+          <p className="text-sm">{t('processing.noDocumentsHint')}</p>
+        </div>
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <table className="w-full">

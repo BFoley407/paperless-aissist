@@ -1,19 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Brain, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
+import { Brain, RefreshCw, CheckCircle } from 'lucide-react'
+import { toast } from 'sonner'
 import { configApi } from '../api/client'
 import { ConfigSectionProps } from './ConfigSectionProps'
 import { fieldClass, labelClass, hintClass } from './fieldStyles'
 
-interface LlmResult {
-  success: boolean
-  message: string
-}
-
 export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionProps) {
   const { t } = useTranslation()
   const [testing, setTesting] = useState(false)
-  const [llmResult, setLlmResult] = useState<LlmResult | null>(null)
 
   const handleChange = async (key: string, value: string) => {
     await onSave(key, value)
@@ -21,7 +16,6 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
 
   const handleTestLlm = async () => {
     setTesting(true)
-    setLlmResult(null)
     try {
       const res = await configApi.testConnection()
       const data = res.data
@@ -31,10 +25,14 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
       if (data.vision !== null && data.vision !== undefined)
         message += `\nVision: ${data.vision.message}`
 
-      setLlmResult({ success: data.success, message })
+      if (data.success) {
+        toast.success(message)
+      } else {
+        toast.error(message)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Connection failed'
-      setLlmResult({ success: false, message: `Error: ${message}` })
+      toast.error(`Error: ${message}`)
     } finally {
       setTesting(false)
     }
@@ -127,14 +125,30 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
         </div>
         <div>
           <label className={labelClass}>{t('config.visionOcr')}</label>
-          <select
-            value={config.enable_vision || 'false'}
-            onChange={(e) => handleChange('enable_vision', e.target.value)}
-            className={fieldClass}
-          >
-            <option value="false">{t('common.disabled')}</option>
-            <option value="true">{t('common.enabled')}</option>
-          </select>
+          <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => handleChange('enable_vision', 'false')}
+              className={`px-3 py-2 text-sm ${
+                (config.enable_vision || 'false') === 'false'
+                  ? 'bg-gray-100 text-gray-900'
+                  : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {t('common.disabled')}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChange('enable_vision', 'true')}
+              className={`px-3 py-2 text-sm border-l border-gray-300 ${
+                (config.enable_vision || 'false') === 'true'
+                  ? 'bg-blue-50 text-blue-700'
+                  : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {t('common.enabled')}
+            </button>
+          </div>
           <p className={hintClass}>{t('config.visionOcrHint')}</p>
         </div>
         <div>
@@ -150,21 +164,6 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
           <p className={hintClass}>{t('config.llmTimeoutHint')}</p>
         </div>
       </div>
-
-      {llmResult && (
-        <div
-          className={`flex items-start gap-2 px-3 py-2 rounded-lg text-sm ${
-            llmResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-          }`}
-        >
-          {llmResult.success ? (
-            <CheckCircle size={16} className="mt-0.5 shrink-0" />
-          ) : (
-            <XCircle size={16} className="mt-0.5 shrink-0" />
-          )}
-          <span className="whitespace-pre-line">{llmResult.message}</span>
-        </div>
-      )}
     </div>
   )
 }

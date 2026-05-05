@@ -52,6 +52,8 @@ export default function Dashboard() {
   const [recentLogs, setRecentLogs] = useState<RecentLog[]>([])
   const [loading, setLoading] = useState(true)
   const [resetting, setResetting] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [logFilter, setLogFilter] = useState<'all' | 'success' | 'failed' | 'skipped'>('all')
 
   useEffect(() => {
     loadData()
@@ -59,6 +61,7 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
+      setLoadError(null)
       const [statsRes, dailyRes, recentRes] = await Promise.all([
         statsApi.get(),
         statsApi.getDaily(7),
@@ -68,7 +71,11 @@ export default function Dashboard() {
       setDailyStats(dailyRes.data)
       setRecentLogs(recentRes.data)
     } catch (error) {
-      console.error('Failed to load stats:', error)
+      const message = error instanceof Error ? error.message : t('dashboard.loadFailed')
+      setLoadError(message)
+      setStats(null)
+      setDailyStats([])
+      setRecentLogs([])
     } finally {
       setLoading(false)
     }
@@ -91,7 +98,7 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <div className="text-gray-500">{t('common.loading')}</div>
+    return <div className="py-8 text-gray-500">{t('common.loading')}</div>
   }
 
   const pieData = stats
@@ -102,6 +109,9 @@ export default function Dashboard() {
       ]
     : []
 
+  const filteredLogs =
+    logFilter === 'all' ? recentLogs : recentLogs.filter((log) => log.status === logFilter)
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -110,7 +120,7 @@ export default function Dashboard() {
           <button
             onClick={loadData}
             disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
           >
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             {t('common.refresh')}
@@ -118,7 +128,7 @@ export default function Dashboard() {
           <button
             onClick={handleReset}
             disabled={resetting}
-            className="flex items-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-50"
           >
             <Trash2 size={18} />
             {resetting ? t('dashboard.resetting') : t('dashboard.resetStats')}
@@ -126,7 +136,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {loadError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          {t('dashboard.loadFailed')}: {loadError}
+        </div>
+      )}
+
+      {!loadError && !stats && (
+        <div className="p-8 bg-white rounded-lg border border-gray-200 text-center text-gray-500">
+          {t('dashboard.emptyState')}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
         <div className="bg-white rounded-lg shadow p-6">
           <p className="text-sm text-gray-500">{t('dashboard.totalProcessed')}</p>
           <p className="text-3xl font-bold text-gray-900">{stats?.total_processed || 0}</p>
@@ -140,6 +162,14 @@ export default function Dashboard() {
           <p className="text-3xl font-bold text-gray-900">
             {((stats?.avg_processing_time_ms || 0) / 1000).toFixed(1)}s
           </p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <p className="text-sm text-gray-500">{t('dashboard.failed')}</p>
+          <p className="text-3xl font-bold text-red-600">{stats?.failed || 0}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow p-6">
+          <p className="text-sm text-gray-500">{t('dashboard.skipped')}</p>
+          <p className="text-3xl font-bold text-amber-600">{stats?.skipped || 0}</p>
         </div>
       </div>
 
@@ -191,9 +221,26 @@ export default function Dashboard() {
       </div>
 
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">{t('dashboard.recentLogs')}</h2>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+          <h2 className="text-lg font-semibold">{t('dashboard.recentLogs')}</h2>
+          <div className="flex flex-wrap gap-2">
+            {(['all', 'success', 'failed', 'skipped'] as const).map((status) => (
+              <button
+                key={status}
+                onClick={() => setLogFilter(status)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  logFilter === status
+                    ? 'bg-blue-50 border-blue-300 text-blue-700'
+                    : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {status === 'all' ? t('dashboard.all') : t(`dashboard.${status}`)}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[700px]">
             <thead>
               <tr className="border-b">
                 <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
@@ -214,7 +261,7 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {recentLogs.map((log) => (
+              {filteredLogs.map((log) => (
                 <tr key={log.id} className="border-b hover:bg-gray-50">
                   <td className="py-3 px-4">
                     {log.document_title || t('dashboard.docFallback', { id: log.document_id })}
@@ -254,6 +301,9 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
+        {filteredLogs.length === 0 && (
+          <p className="text-sm text-gray-500 py-4">{t('dashboard.noLogsForFilter')}</p>
+        )}
       </div>
     </div>
   )
