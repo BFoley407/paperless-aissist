@@ -6,7 +6,8 @@
     "chat": "Chat",
     "configuration": "Configuration",
     "prompts": "Prompts",
-    "logs": "System Logs"
+    "logs": "System Logs",
+    "openMenu": "Open menu"
   },
   "common": {
     "loading": "Loading...",
@@ -41,7 +42,12 @@
     "success": "Success",
     "failed": "Failed",
     "skipped": "Skipped",
+    "all": "All",
+    "completed": "Completed",
     "docFallback": "Doc #{{id}}",
+    "emptyState": "No processing data available yet.",
+    "loadFailed": "Failed to load dashboard data",
+    "noLogsForFilter": "No log entries for this filter.",
     "confirmReset": "Are you sure you want to delete all processing logs? This cannot be undone.",
     "resetFailed": "Failed to reset stats"
   },
@@ -60,6 +66,7 @@
     "paperlessUrl": "Paperless URL",
     "apiToken": "API Token",
     "apiTokenPlaceholder": "Enter your Paperless API token",
+    "alreadySetPlaceholder": "Already set - enter new value to update",
     "tagDropdownHint": "Tag dropdowns populated from Paperless",
     "processTag": "Process Tag",
     "processTagHint": "Documents with this tag will be processed",
@@ -85,10 +92,9 @@
     "apiKeyPlaceholderCloud": "xai-... / sk-...",
     "visionOcr": "Vision / OCR",
     "visionOcrHint": "Use a vision model to OCR document images",
-    "fallbackOcr": "Fallback OCR (Tesseract)",
-    "fallbackOcrHint": "Use local Tesseract OCR if vision model fails",
     "visionModelSection": "Vision Model Settings",
     "visionModel": "Vision Model",
+    "visionSectionDisabledHint": "Vision OCR is disabled, but you can preconfigure provider and model here.",
     "schedulerSection": "Auto-Processing Scheduler",
     "schedulerRunning": "Running",
     "schedulerStopped": "Stopped",
@@ -139,7 +145,13 @@
     "authEnabled": "Require Login",
     "authEnabledHint": "When enabled, users must sign in with their Paperless-ngx credentials",
     "authEnabledWarning": "You will be redirected to the login page immediately after saving.",
-    "authRequiresPaperless": "Paperless URL must be configured before enabling authentication."
+    "authRequiresPaperless": "Paperless URL must be configured before enabling authentication.",
+    "tabServer": "Server",
+    "tabLLM": "LLM/Vision",
+    "tabVision": "Vision",
+    "tabScheduler": "Scheduler",
+    "tabTags": "Tags",
+    "tabAdvanced": "Advanced"
   },
   "login": {
     "title": "Sign In",
@@ -204,6 +216,12 @@
     "updateCustomFields": "Custom Fields:",
     "updateContent": "Content:",
     "noDocuments": "No documents to process",
+    "noDocumentsHint": "Tag documents with your process tag in Paperless to fill the queue.",
+    "queueCount": "Queue",
+    "schedulerState": "Scheduler",
+    "schedulerNextLabel": "Next run",
+    "notScheduled": "Not scheduled",
+    "noStepsForFilter": "No steps match this filter.",
     "colDocument": "Document",
     "colId": "ID",
     "colCreated": "Created",
@@ -222,7 +240,15 @@
     "pause": "Pause",
     "resume": "Resume",
     "clear": "Clear",
-    "emptyState": "No log entries yet."
+    "emptyState": "No log entries yet.",
+    "reconnecting": "Connection lost. Reconnecting…",
+    "noEntriesForFilter": "No log entries for this filter.",
+    "filter": {
+      "all": "All",
+      "error": "Error",
+      "warning": "Warning",
+      "info": "Info"
+    }
   },
   "chat": {
     "title": "Document Chat",

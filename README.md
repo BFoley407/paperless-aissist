@@ -45,13 +45,18 @@ Tag a document with `ai-process` and it gets automatically classified, titled, t
 ```bash
 docker run -d \
   --name paperless-aissist \
-  -p 8000:80 \
+  -p 8000:8080 \
+  -e PUID=1000 \
+  -e PGID=1000 \
   -v paperless-aissist-data:/app/data \
   --restart unless-stopped \
   nyxtronlab/paperless-aissist:latest
 ```
 
 Open the web UI at **http://localhost:8000**
+
+> The container runs application processes as a non-root user.
+> Set `PUID` and `PGID` to match your host user/group (especially on Unraid).
 
 ### 2. Or use Docker Compose
 
@@ -61,7 +66,10 @@ services:
     image: nyxtronlab/paperless-aissist:latest
     container_name: paperless-aissist
     ports:
-      - "8000:80"
+      - "8000:8080"
+    environment:
+      - PUID=1000
+      - PGID=1000
     volumes:
       - paperless-aissist-data:/app/data
     restart: unless-stopped

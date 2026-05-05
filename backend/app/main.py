@@ -1,3 +1,10 @@
+"""FastAPI entry point for Paperless-AIssist.
+
+The application initializes the database, loads default prompts from the examples
+directory, configures logging, and manages scheduler lifecycle. All routes require
+authentication when auth is enabled.
+"""
+
 import json
 import logging
 from pathlib import Path
@@ -7,24 +14,59 @@ from contextlib import asynccontextmanager
 
 from sqlmodel import select
 
-from .database import create_db_and_tables, get_session
+from .database import run_migrations, get_session
 from .models import Config
 from .routers import config, prompts, documents, stats, scheduler, auth as auth_router
 from .auth import require_auth
 from .services.log_stream import BroadcastHandler, apply_log_level
+from .limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 _broadcast_handler = BroadcastHandler()
 _broadcast_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 )
-logging.basicConfig(
-    level=logging.INFO, handlers=[logging.StreamHandler(), _broadcast_handler]
-)
-for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-    logging.getLogger(_name).addHandler(_broadcast_handler)
+
+def _attach_broadcast_handler():
+    """Re-attach broadcast handler after uvicorn replaces logging config."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    if _broadcast_handler not in root_logger.handlers:
+        root_logger.addHandler(_broadcast_handler)
+    for _name in (
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "app.services.processor",
+        "app.services.llm_handler",
+        "app.services.paperless",
+        "app.services.vision",
+        "app.services.scheduler",
+        "app.routers.config",
+        "app.routers.documents",
+        "app.routers.scheduler",
+    ):
+        _logger = logging.getLogger(_name)
+        _logger.disabled = False
+        _logger.setLevel(logging.INFO)
+        # Remove duplicate BroadcastHandler from child loggers;
+        # they propagate to root which already has it.
+        for h in list(_logger.handlers):
+            if isinstance(h, BroadcastHandler):
+                _logger.removeHandler(h)
 
 
 def get_config_value(key: str, default: str = "*") -> str:
+    """Retrieve a configuration value from the database.
+
+    Args:
+        key: The configuration key to look up.
+        default: Default value if key is not found.
+
+    Returns:
+        The configuration value, or the default if not found.
+    """
     with get_session() as session:
         stmt = select(Config).where(Config.key == key)
         config = session.exec(stmt).first()
@@ -33,12 +75,18 @@ def get_config_value(key: str, default: str = "*") -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_db_and_tables()
+    """Application lifespan manager.
+
+    Handles startup (DB creation, prompt loading, scheduler auto-start) and
+    shutdown (LLM handler and Paperless client cleanup).
+    """
+    run_migrations()
+    _attach_broadcast_handler()
 
     from .database import get_session
     from .models import Prompt, Config
     from sqlmodel import select
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     examples_dir = Path(__file__).parent.parent.parent / "examples" / "prompts"
     default_prompts = []
@@ -59,7 +107,9 @@ async def lifespan(app: FastAPI):
             existing = session.exec(stmt).first()
             if not existing:
                 db_prompt = Prompt(
-                    **p, created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+                    **p,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 session.add(db_prompt)
 
@@ -82,6 +132,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    from .services.paperless_manager import PaperlessClientManager
+    from .services.llm_handler import LLMHandlerManager
+
+    await PaperlessClientManager.close()
+    await LLMHandlerManager.close()
+
+
+run_migrations()
 
 app = FastAPI(
     title="Paperless-AIssist",
@@ -90,14 +148,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-create_db_and_tables()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-origins_str = get_config_value("allowed_origins", "*")
-origins = [o.strip() for o in origins_str.split(",")] if origins_str != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -108,7 +165,7 @@ app.include_router(auth_router.router)
 app.include_router(config.router, dependencies=_auth_dep)
 app.include_router(prompts.router, dependencies=_auth_dep)
 app.include_router(documents.router, dependencies=_auth_dep)
-app.include_router(stats.router, dependencies=_auth_dep)
+app.include_router(stats.router)
 app.include_router(scheduler.router, dependencies=_auth_dep)
 
 
