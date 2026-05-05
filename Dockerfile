@@ -13,6 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    gosu \
     nginx \
     supervisor \
     tesseract-ocr \
@@ -32,16 +33,19 @@ COPY examples /app/examples
 COPY frontend/dist /app/frontend
 COPY nginx.conf /app/nginx.conf
 COPY supervisord.conf /app/supervisord.conf
+COPY docker/entrypoint.sh /app/entrypoint.sh
 
-RUN mkdir -p /app/data /app/frontend /var/log/supervisor /var/log/nginx /var/lib/nginx/body /var/lib/nginx/cache /var/run
-
-RUN touch /var/run/supervisord.pid
+RUN mkdir -p /app/data /app/frontend /var/log/supervisor /var/log/nginx /var/lib/nginx/body /var/lib/nginx/cache /var/run \
+    && chmod +x /app/entrypoint.sh
 
 WORKDIR /app/backend
 
 ENV DATA_DIR=/app/data
 ENV PYTHONUNBUFFERED=1
+ENV PUID=1000
+ENV PGID=1000
 
-EXPOSE 80
+EXPOSE 8080
 
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/app/supervisord.conf"]
