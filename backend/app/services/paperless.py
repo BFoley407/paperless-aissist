@@ -6,9 +6,15 @@ All requests include bearer token authentication.
 
 import httpx
 import logging
+import time
 from typing import Optional, Any
 from urllib.parse import urlparse, urlunparse
-from ..constants import PAPERLESS_TIMEOUT, DEFAULT_PAGE_SIZE
+from ..constants import (
+    PAPERLESS_TIMEOUT,
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_FETCH_SIZE,
+    PAPERLESS_METADATA_CACHE_TTL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,9 @@ class PaperlessClient:
         self.base_url = base_url
         self.token = token
         self.client = httpx.AsyncClient(timeout=PAPERLESS_TIMEOUT)
+        self._metadata_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+        self._request_count = 0
+        self._paged_request_count = 0
 
     @classmethod
     async def from_config(cls) -> "PaperlessClient":
@@ -60,9 +69,21 @@ class PaperlessClient:
         except (ValueError, TypeError):
             return DEFAULT_PAGE_SIZE
 
+    async def _get_fetch_size(self) -> int:
+        from .config_cache import ConfigCache
+
+        cache = await ConfigCache.get_instance()
+        val = await cache.get("paperless_fetch_size", str(DEFAULT_FETCH_SIZE))
+        try:
+            size = int(val)
+            return min(max(size, 50), 1000)
+        except (ValueError, TypeError):
+            return DEFAULT_FETCH_SIZE
+
     async def get_document(self, doc_id: int) -> dict[str, Any]:
         url = f"{self.base_url}/api/documents/{doc_id}/"
         logger.debug(f"GET {url}")
+        self._request_count += 1
         response = await self.client.get(url, headers=self._get_headers())
         response.raise_for_status()
         return response.json()
@@ -70,6 +91,7 @@ class PaperlessClient:
     async def get_document_file(self, doc_id: int) -> bytes:
         url = f"{self.base_url}/api/documents/{doc_id}/download/"
         logger.debug(f"GET {url}")
+        self._request_count += 1
         response = await self.client.get(url, headers=self._get_headers())
         response.raise_for_status()
         return response.content
@@ -78,9 +100,10 @@ class PaperlessClient:
         self,
         tags: Optional[list[int]] = None,
         search: Optional[str] = None,
-        max_page_limit: int = 100,
+        max_page_limit: Optional[int] = None,
     ) -> list[dict]:
-        params: dict[str, Any] = {"page_size": 100}
+        fetch_size = await self._get_fetch_size()
+        params: dict[str, Any] = {"page_size": fetch_size}
         if tags:
             params["tags__id__all"] = ",".join(map(str, tags))
         if search:
@@ -88,7 +111,8 @@ class PaperlessClient:
         url = f"{self.base_url}/api/documents/?" + "&".join(
             f"{k}={v}" for k, v in params.items()
         )
-        return await self._get_all_pages(url, max_page_limit)
+        page_limit = max_page_limit if max_page_limit is not None else await self._get_max_pages()
+        return await self._get_all_pages(url, page_limit)
 
     async def _get_all_pages(
         self, url: str, max_page_limit: int = 100
@@ -99,6 +123,8 @@ class PaperlessClient:
         page = 0
         while next_url and page < max_page_limit:
             logger.debug(f"GET {next_url}")
+            self._request_count += 1
+            self._paged_request_count += 1
             response = await self.client.get(next_url, headers=self._get_headers())
             response.raise_for_status()
             data = response.json()
@@ -115,24 +141,34 @@ class PaperlessClient:
         return results
 
     async def get_correspondents(self) -> list[dict[str, Any]]:
-        return await self._get_all_pages(
-            f"{self.base_url}/api/correspondents/", await self._get_max_pages()
+        return await self._get_cached_collection(
+            "correspondents", f"{self.base_url}/api/correspondents/"
         )
 
     async def get_tags(self) -> list[dict[str, Any]]:
-        return await self._get_all_pages(
-            f"{self.base_url}/api/tags/", await self._get_max_pages()
-        )
+        return await self._get_cached_collection("tags", f"{self.base_url}/api/tags/")
 
     async def get_document_types(self) -> list[dict[str, Any]]:
-        return await self._get_all_pages(
-            f"{self.base_url}/api/document_types/", await self._get_max_pages()
+        return await self._get_cached_collection(
+            "document_types", f"{self.base_url}/api/document_types/"
         )
 
     async def get_custom_fields(self) -> list[dict[str, Any]]:
-        return await self._get_all_pages(
-            f"{self.base_url}/api/custom_fields/", await self._get_max_pages()
+        return await self._get_cached_collection(
+            "custom_fields", f"{self.base_url}/api/custom_fields/"
         )
+
+    async def _get_cached_collection(
+        self, cache_key: str, url: str
+    ) -> list[dict[str, Any]]:
+        now = time.monotonic()
+        cached = self._metadata_cache.get(cache_key)
+        if cached and (now - cached[0]) < PAPERLESS_METADATA_CACHE_TTL:
+            return cached[1]
+
+        data = await self._get_all_pages(url, await self._get_max_pages())
+        self._metadata_cache[cache_key] = (now, data)
+        return data
 
     async def update_document(
         self,
@@ -160,6 +196,7 @@ class PaperlessClient:
             payload["content"] = content
 
         logger.debug(f"PATCH {url} payload_keys={list(payload.keys())}")
+        self._request_count += 1
         response = await self.client.patch(
             url, headers=self._get_headers(), json=payload
         )
@@ -170,6 +207,16 @@ class PaperlessClient:
     @property
     def is_closed(self) -> bool:
         return self.client.is_closed
+
+    def get_metrics(self) -> dict[str, int]:
+        return {
+            "requests": self._request_count,
+            "paged_requests": self._paged_request_count,
+        }
+
+    def reset_metrics(self) -> None:
+        self._request_count = 0
+        self._paged_request_count = 0
 
     async def close(self):
         await self.client.aclose()

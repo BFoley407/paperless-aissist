@@ -103,4 +103,8 @@ export const schedulerApi = {
   clearState: () => api.post('/scheduler/clear-state'),
 }
 
+export const appInfoApi = {
+  get: () => api.get<{ version: string }>('/app-info'),
+}
+
 export default api

@@ -80,6 +80,16 @@ def test_auth_status_endpoint(client):
     assert "auth_enabled" in response.json()
 
 
+def test_app_info_endpoint(client):
+    """App info endpoint exposes the runtime version string."""
+    response = client.get("/api/app-info")
+    assert response.status_code == 200
+    data = response.json()
+    assert "version" in data
+    assert isinstance(data["version"], str)
+    assert data["version"]
+
+
 def test_prompts_list(client):
     """Prompts endpoint returns a list."""
     response = client.get("/api/prompts")

@@ -1,5 +1,5 @@
 import { Outlet, NavLink } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
@@ -11,13 +11,27 @@ import {
   LogOut,
   Menu,
   X,
+  Github,
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { appInfoApi } from '../api/client'
 
 export default function Layout() {
   const { t, i18n } = useTranslation()
   const { isAuthEnabled, logout } = useAuth()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [appVersion, setAppVersion] = useState('dev')
+
+  useEffect(() => {
+    appInfoApi
+      .get()
+      .then((res) => {
+        if (res.data.version) setAppVersion(res.data.version)
+      })
+      .catch(() => {
+        setAppVersion('dev')
+      })
+  }, [])
 
   const navItems = [
     { path: '/dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
@@ -27,6 +41,7 @@ export default function Layout() {
     { path: '/prompts', label: t('nav.prompts'), icon: FileText },
     { path: '/logs', label: t('nav.logs'), icon: ScrollText },
   ]
+  const githubRepoUrl = 'https://github.com/nyxtron/paperless-aissist'
 
   const accountControls = (
     <div className="flex gap-2">
@@ -64,7 +79,7 @@ export default function Layout() {
         </div>
         <p className="text-sm text-gray-500">{t('nav.subtitle')}</p>
       </div>
-      <nav className="px-4 pb-4">
+      <nav className="px-4">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
@@ -81,12 +96,32 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>
+      <div className="mt-auto px-4 py-4 border-t border-gray-200">
+        <div className="flex items-center justify-between gap-3 px-3 py-2">
+          <a
+            href={githubRepoUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-w-0 items-center gap-2 rounded-md text-sm font-medium text-gray-600 hover:text-gray-900"
+            aria-label="Paperless-AIssist on GitHub"
+          >
+            <Github size={16} className="shrink-0" />
+            <span className="truncate">GitHub</span>
+          </a>
+          <span
+            className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600"
+            title={appVersion}
+          >
+            {appVersion}
+          </span>
+        </div>
+      </div>
     </>
   )
 
   return (
     <div className="min-h-screen bg-gray-50 md:flex">
-      <aside className="hidden md:block w-72 bg-white border-r border-gray-200">
+      <aside className="hidden md:flex md:flex-col w-72 bg-white border-r border-gray-200">
         {navContent}
       </aside>
 

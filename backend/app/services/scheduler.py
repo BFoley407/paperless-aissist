@@ -316,6 +316,8 @@ async def process_modular_tagged_documents() -> dict:
     from ..services.processor import DocumentProcessor
 
     paperless = await PaperlessClientManager.get_client()
+    paperless.reset_metrics()
+    started = asyncio.get_running_loop().time()
     processor = DocumentProcessor(paperless)
     tag_map = await processor._get_modular_tag_map()
     trigger_tag_names = list(tag_map.values())
@@ -323,17 +325,34 @@ async def process_modular_tagged_documents() -> dict:
     all_tags = await paperless.get_tags()
     tag_name_to_id = {t["name"]: t["id"] for t in all_tags}
 
+    trigger_tag_ids = {
+        tag_name_to_id[tag_name]
+        for tag_name in trigger_tag_names
+        if tag_name in tag_name_to_id
+    }
+    if not trigger_tag_ids:
+        return {"success": True, "processed": 0, "results": []}
+
     doc_ids: set[int] = set()
+    all_docs = await paperless.list_documents()
+    for doc in all_docs:
+        doc_tags = set(doc.get("tags", []))
+        if doc_tags & trigger_tag_ids:
+            doc_ids.add(doc["id"])
+
+    logger.debug(
+        "Scheduler modular scan: %d docs matched across %d trigger tags",
+        len(doc_ids),
+        len(trigger_tag_ids),
+    )
+
+    if not doc_ids:
+        return {"success": True, "processed": 0, "results": []}
+
+    # Keep compatibility: preserve existing per-doc processing behavior.
     for tag_name in trigger_tag_names:
-        tag_id = tag_name_to_id.get(tag_name)
-        if not tag_id:
-            continue
-        try:
-            docs = await paperless.list_documents(tags=[tag_id])
-            for doc in docs:
-                doc_ids.add(doc["id"])
-        except Exception as e:
-            logger.warning(f"Failed to list docs for modular tag {tag_name!r}: {e}")
+        if tag_name not in tag_name_to_id:
+            logger.debug("Scheduler modular tag %r not found in Paperless", tag_name)
 
     async def process_one(doc_id: int):
         return await processor.process_document(doc_id)
@@ -352,6 +371,15 @@ async def process_modular_tagged_documents() -> dict:
     errors = [str(r) for r in results if isinstance(r, Exception)]
     if errors:
         logger.warning(f"Modular processing errors: {errors}")
+    metrics = paperless.get_metrics()
+    logger.debug(
+        "Scheduler modular run: processed=%d/%d, requests=%d (paged=%d), duration=%.2fs",
+        processed,
+        len(doc_ids),
+        metrics["requests"],
+        metrics["paged_requests"],
+        asyncio.get_running_loop().time() - started,
+    )
     return {
         "success": True,
         "processed": processed,

@@ -37,6 +37,7 @@ from .llm_handler import LLMHandlerManager
 from ..exceptions import LLMUnavailableError
 from ..constants import CONTENT_TRUNCATION_LIMIT, TITLE_MAX_LENGTH
 from .vision import VisionPipeline
+from .config_cache import ConfigCache
 
 _in_flight_docs: set[int] = set()
 _in_flight_lock = asyncio.Lock()
@@ -110,11 +111,8 @@ class DocumentProcessor:
 
     @staticmethod
     async def _get_config(key: str, default: Optional[str] = None) -> Optional[str]:
-        async with get_async_session() as session:
-            stmt = select(Config).where(Config.key == key)
-            config = await session.exec(stmt)
-            config = config.first()
-            return config.value if config else default
+        cache = await ConfigCache.get_instance()
+        return await cache.get(key, default or "")
 
     @staticmethod
     async def _get_all_prompts() -> list[dict]:
@@ -790,11 +788,8 @@ Available Custom Fields: [{custom_fields_list}]"""
             "fields": "modular_tag_fields",
             "process": "modular_tag_process",
         }
-        async with get_async_session() as session:
-            stmt = select(Config)
-            configs = await session.exec(stmt)
-            configs = configs.all()
-            config_dict = {c.key: c.value for c in configs}
+        cache = await ConfigCache.get_instance()
+        config_dict = await cache.get_all()
         result = {}
         for step_id, config_key in step_to_config.items():
             tag_name = config_dict.get(config_key) or MODULAR_TAG_DEFAULTS.get(
@@ -805,6 +800,8 @@ Available Custom Fields: [{custom_fields_list}]"""
         return result
 
     async def process_tagged_documents(self) -> dict[str, Any]:
+        self.paperless.reset_metrics()
+        started = time.perf_counter()
         process_tag_name = await self._get_config("process_tag")
 
         if not process_tag_name:
@@ -830,6 +827,15 @@ Available Custom Fields: [{custom_fields_list}]"""
         for doc in documents:
             result = await self.process_document(doc["id"])
             results.append(result)
+
+        metrics = self.paperless.get_metrics()
+        logger.debug(
+            "Legacy process-tag run: processed=%d, requests=%d (paged=%d), duration=%.2fs",
+            len(results),
+            metrics["requests"],
+            metrics["paged_requests"],
+            time.perf_counter() - started,
+        )
 
         return {
             "success": True,
