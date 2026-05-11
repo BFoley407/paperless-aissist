@@ -31,6 +31,7 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
     tags: [],
     correspondents: [],
   })
+  const hasPaperlessToken = secretsSet?.includes('paperless_token') ?? false
 
   const handleTest = useCallback(async () => {
     setTesting(true)
@@ -65,12 +66,20 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
   }, [t])
 
   useEffect(() => {
-    if (config.paperless_url && config.paperless_token && status.tags.length === 0) {
+    if (
+      config.paperless_url &&
+      (config.paperless_token || hasPaperlessToken) &&
+      status.tags.length === 0
+    ) {
       handleTest()
     }
-  }, [config.paperless_url, config.paperless_token, handleTest])
-
-  const hasPaperlessToken = secretsSet?.includes('paperless_token') ?? false
+  }, [
+    config.paperless_url,
+    config.paperless_token,
+    handleTest,
+    hasPaperlessToken,
+    status.tags.length,
+  ])
 
   const handleChange = async (key: string, value: string) => {
     await onSave(key, value)
@@ -110,7 +119,11 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
             type="password"
             value={config.paperless_token || ''}
             onChange={(e) => handleChange('paperless_token', e.target.value)}
-            placeholder={hasPaperlessToken ? t('config.alreadySetPlaceholder') : t('config.apiTokenPlaceholder')}
+            placeholder={
+              hasPaperlessToken
+                ? t('config.alreadySetPlaceholder')
+                : t('config.apiTokenPlaceholder')
+            }
             className={fieldClass}
           />
         </div>

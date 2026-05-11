@@ -166,7 +166,10 @@ class PaperlessClient:
         if cached and (now - cached[0]) < PAPERLESS_METADATA_CACHE_TTL:
             return cached[1]
 
-        data = await self._get_all_pages(url, await self._get_max_pages())
+        fetch_size = await self._get_fetch_size()
+        separator = "&" if "?" in url else "?"
+        paged_url = f"{url}{separator}page_size={fetch_size}"
+        data = await self._get_all_pages(paged_url, await self._get_max_pages())
         self._metadata_cache[cache_key] = (now, data)
         return data
 
