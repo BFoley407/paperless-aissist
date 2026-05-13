@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
 
@@ -116,3 +118,99 @@ def test_stats_log_stream_asyncio_imported(client):
     tree = ast.parse(source)
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     assert "asyncio" in names
+
+
+def test_tagged_documents_uses_tag_filtered_requests_and_deduplicates(client):
+    client.post("/api/config", json={"key": "process_tag", "value": "ai-process"})
+    paperless = MagicMock()
+    paperless.reset_metrics = MagicMock()
+    paperless.get_metrics = MagicMock(return_value={"requests": 3, "paged_requests": 2})
+    paperless.get_tags = AsyncMock(
+        return_value=[
+            {"id": 5, "name": "ai-process"},
+            {"id": 7, "name": "ai-title"},
+        ]
+    )
+    paperless.list_documents = AsyncMock(
+        side_effect=[
+            [
+                {"id": 1, "title": "Legacy", "created": "2026-01-01", "tags": [5]},
+                {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
+            ],
+            [
+                {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
+                {"id": 3, "title": "Title", "created": "2026-01-03", "tags": [7]},
+            ],
+        ]
+    )
+
+    with (
+        patch(
+            "app.routers.documents.PaperlessClientManager.get_client",
+            AsyncMock(return_value=paperless),
+        ),
+        patch(
+            "app.routers.documents.DocumentProcessor._get_modular_tag_map",
+            AsyncMock(return_value={"title": "ai-title"}),
+        ),
+    ):
+        response = client.get("/api/documents/tagged")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [doc["id"] for doc in data["documents"]] == [1, 2, 3]
+    assert data["process_tag_id"] == 5
+    assert paperless.list_documents.call_count == 2
+    tag_filters = {
+        tuple(call.kwargs["tags"]) for call in paperless.list_documents.call_args_list
+    }
+    assert tag_filters == {(5,), (7,)}
+
+
+def test_tagged_documents_no_trigger_tags_does_not_scan_documents(client):
+    client.post("/api/config", json={"key": "process_tag", "value": "missing-process"})
+    paperless = MagicMock()
+    paperless.reset_metrics = MagicMock()
+    paperless.get_tags = AsyncMock(return_value=[{"id": 10, "name": "unrelated"}])
+    paperless.list_documents = AsyncMock(return_value=[])
+
+    with (
+        patch(
+            "app.routers.documents.PaperlessClientManager.get_client",
+            AsyncMock(return_value=paperless),
+        ),
+        patch(
+            "app.routers.documents.DocumentProcessor._get_modular_tag_map",
+            AsyncMock(return_value={"title": "missing-title"}),
+        ),
+    ):
+        response = client.get("/api/documents/tagged")
+
+    assert response.status_code == 200
+    assert response.json()["documents"] == []
+    paperless.list_documents.assert_not_called()
+
+
+def test_metadata_routes_pass_refresh_to_paperless_client(client):
+    paperless = MagicMock()
+    paperless.get_tags = AsyncMock(return_value=[{"id": 1, "name": "ai-process"}])
+    paperless.get_correspondents = AsyncMock(return_value=[])
+    paperless.get_document_types = AsyncMock(return_value=[])
+
+    with patch(
+        "app.routers.documents.PaperlessClientManager.get_client",
+        AsyncMock(return_value=paperless),
+    ):
+        tags_response = client.get("/api/documents/tags?refresh=true")
+        test_response = client.get("/api/documents/test-connection?refresh=true")
+
+    assert tags_response.status_code == 200
+    assert test_response.status_code == 200
+    assert paperless.get_tags.call_args_list[0].kwargs == {"force_refresh": True}
+    assert paperless.get_correspondents.call_args_list[0].kwargs == {
+        "force_refresh": True
+    }
+    assert paperless.get_document_types.call_args_list[0].kwargs == {
+        "force_refresh": True
+    }
+    assert paperless.get_tags.call_args_list[1].kwargs == {"force_refresh": True}

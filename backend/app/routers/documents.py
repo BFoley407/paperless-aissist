@@ -116,12 +116,12 @@ async def trigger_processing():
 
 
 @router.get("/test-connection")
-async def test_paperless_connection():
+async def test_paperless_connection(refresh: bool = Query(False)):
     try:
         paperless = await PaperlessClientManager.get_client()
-        tags = await paperless.get_tags()
-        correspondents = await paperless.get_correspondents()
-        document_types = await paperless.get_document_types()
+        tags = await paperless.get_tags(force_refresh=refresh)
+        correspondents = await paperless.get_correspondents(force_refresh=refresh)
+        document_types = await paperless.get_document_types(force_refresh=refresh)
 
         return {
             "success": True,
@@ -138,7 +138,7 @@ async def test_paperless_connection():
 
 
 @router.get("/tags")
-async def get_paperless_tags():
+async def get_paperless_tags(refresh: bool = Query(False)):
     """Return all Paperless tags, correspondents, and document types."""
     try:
         paperless = await PaperlessClientManager.get_client()
@@ -146,9 +146,9 @@ async def get_paperless_tags():
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        tags = await paperless.get_tags()
-        correspondents = await paperless.get_correspondents()
-        document_types = await paperless.get_document_types()
+        tags = await paperless.get_tags(force_refresh=refresh)
+        correspondents = await paperless.get_correspondents(force_refresh=refresh)
+        document_types = await paperless.get_document_types(force_refresh=refresh)
 
         return {
             "tags": [{"id": t["id"], "name": t["name"]} for t in tags],
@@ -209,19 +209,16 @@ async def get_tagged_documents():
                 "process_tag_id": process_tag_id,
             }
 
-        # Fetch once and filter locally to avoid N+1 tag list calls on large datasets.
-        all_docs = await paperless.list_documents()
         merged: dict[int, dict] = {}
-        for doc in all_docs:
-            doc_tags = set(doc.get("tags", []))
-            if doc_tags & trigger_tag_ids:
+        for tag_id in trigger_tag_ids:
+            for doc in await paperless.list_documents(tags=[tag_id]):
                 merged[doc["id"]] = doc
 
         metrics = paperless.get_metrics()
         logger.debug(
-            "Tagged documents query: %d docs matched, %d total docs scanned, %d requests (%d paged), %.2fs",
+            "Tagged documents query: %d docs matched, %d trigger tags, %d requests (%d paged), %.2fs",
             len(merged),
-            len(all_docs),
+            len(trigger_tag_ids),
             metrics["requests"],
             metrics["paged_requests"],
             time.perf_counter() - started,

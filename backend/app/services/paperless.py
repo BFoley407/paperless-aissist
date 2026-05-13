@@ -140,30 +140,48 @@ class PaperlessClient:
                 next_url = None
         return results
 
-    async def get_correspondents(self) -> list[dict[str, Any]]:
+    async def get_correspondents(
+        self, force_refresh: bool = False
+    ) -> list[dict[str, Any]]:
         return await self._get_cached_collection(
-            "correspondents", f"{self.base_url}/api/correspondents/"
+            "correspondents",
+            f"{self.base_url}/api/correspondents/",
+            force_refresh=force_refresh,
         )
 
-    async def get_tags(self) -> list[dict[str, Any]]:
-        return await self._get_cached_collection("tags", f"{self.base_url}/api/tags/")
-
-    async def get_document_types(self) -> list[dict[str, Any]]:
+    async def get_tags(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         return await self._get_cached_collection(
-            "document_types", f"{self.base_url}/api/document_types/"
+            "tags", f"{self.base_url}/api/tags/", force_refresh=force_refresh
         )
 
-    async def get_custom_fields(self) -> list[dict[str, Any]]:
+    async def get_document_types(
+        self, force_refresh: bool = False
+    ) -> list[dict[str, Any]]:
         return await self._get_cached_collection(
-            "custom_fields", f"{self.base_url}/api/custom_fields/"
+            "document_types",
+            f"{self.base_url}/api/document_types/",
+            force_refresh=force_refresh,
+        )
+
+    async def get_custom_fields(
+        self, force_refresh: bool = False
+    ) -> list[dict[str, Any]]:
+        return await self._get_cached_collection(
+            "custom_fields",
+            f"{self.base_url}/api/custom_fields/",
+            force_refresh=force_refresh,
         )
 
     async def _get_cached_collection(
-        self, cache_key: str, url: str
+        self, cache_key: str, url: str, force_refresh: bool = False
     ) -> list[dict[str, Any]]:
         now = time.monotonic()
         cached = self._metadata_cache.get(cache_key)
-        if cached and (now - cached[0]) < PAPERLESS_METADATA_CACHE_TTL:
+        if (
+            not force_refresh
+            and cached
+            and (now - cached[0]) < PAPERLESS_METADATA_CACHE_TTL
+        ):
             return cached[1]
 
         fetch_size = await self._get_fetch_size()

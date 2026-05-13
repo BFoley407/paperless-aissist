@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as clientModule from '../api/client'
 
+const { mockApiGet } = vi.hoisted(() => ({
+  mockApiGet: vi.fn(),
+}))
+
 vi.mock('axios', () => {
   const mockAxiosInstance = vi.fn(() => ({
-    get: vi.fn(),
+    get: mockApiGet,
     post: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
@@ -46,6 +50,12 @@ describe('documentsApi', () => {
     expect(typeof clientModule.documentsApi.chat).toBe('function')
     expect(typeof clientModule.documentsApi.searchPaperless).toBe('function')
     expect(typeof clientModule.documentsApi.getPreview).toBe('function')
+  })
+
+  it('passes the refresh flag when loading tags with refresh requested', () => {
+    clientModule.documentsApi.getTags(true)
+
+    expect(mockApiGet).toHaveBeenCalledWith('/documents/tags', { params: { refresh: true } })
   })
 })
 

@@ -74,7 +74,7 @@ export const documentsApi = {
   trigger: () => api.post('/documents/trigger'),
   testConnection: () => api.get('/documents/test-connection'),
   getTagged: () => api.get('/documents/tagged'),
-  getTags: () => api.get('/documents/tags'),
+  getTags: (refresh = false) => api.get('/documents/tags', { params: { refresh } }),
   getChatList: () => api.get('/documents/chat-list'),
   getChatDocument: (docId: number) => api.get(`/documents/chat/${docId}`),
   chat: (docId: number, message: string) =>

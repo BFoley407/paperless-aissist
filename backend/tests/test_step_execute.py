@@ -350,6 +350,44 @@ class TestTagsStep:
         assert 10 not in result.data.get("tags", [])
 
     @pytest.mark.asyncio
+    async def test_none_blacklist_allows_valid_tags(self, mock_get_session, ctx, mock_llm):
+        """TagsStep treats a None tag_blacklist config value as empty."""
+        self._setup_db(mock_get_session)
+        ctx.config["tag_blacklist"] = None
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": "Amazon, inbox",
+                "raw": "",
+            }
+        )
+
+        step = await TagsStep.from_config(ctx.config)
+        result = await step.execute(ctx)
+
+        assert set(result.data["tags"]) == {1, 6}
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_missing_blacklist_allows_valid_tags(
+        self, mock_get_session, ctx, mock_llm
+    ):
+        """TagsStep treats a missing tag_blacklist config value as empty."""
+        self._setup_db(mock_get_session)
+        ctx.config.pop("tag_blacklist")
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": "Amazon, inbox",
+                "raw": "",
+            }
+        )
+
+        step = await TagsStep.from_config(ctx.config)
+        result = await step.execute(ctx)
+
+        assert set(result.data["tags"]) == {1, 6}
+        assert result.error is None
+
+    @pytest.mark.asyncio
     async def test_unknown_tag_names_skipped(self, mock_get_session, ctx, mock_llm):
         """TagsStep silently skips tag names not found in Paperless."""
         self._setup_db(mock_get_session)
