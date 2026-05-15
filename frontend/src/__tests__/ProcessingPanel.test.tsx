@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
-import ProcessingPanel from '../components/ProcessingPanel'
+import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react'
+import ProcessingPanel, { clearProcessingDocumentCacheForTests } from '../components/ProcessingPanel'
 
 const mocks = vi.hoisted(() => ({
+  mockGetConfig: vi.fn(),
   mockGetTagged: vi.fn(),
   mockTrigger: vi.fn(),
   mockGetStatus: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
+  configApi: {
+    get: mocks.mockGetConfig,
+  },
   documentsApi: {
     getTagged: mocks.mockGetTagged,
     trigger: mocks.mockTrigger,
@@ -33,6 +37,8 @@ vi.mock('react-i18next', () => ({
 
 describe('ProcessingPanel', () => {
   beforeEach(() => {
+    clearProcessingDocumentCacheForTests()
+    mocks.mockGetConfig.mockResolvedValue({ data: { value: 'automatic' } })
     mocks.mockGetTagged.mockResolvedValue({
       data: {
         documents: [
@@ -91,6 +97,24 @@ describe('ProcessingPanel', () => {
     render(<ProcessingPanel />)
     await waitFor(() => {
       expect(screen.getByText('common.refresh')).toBeInTheDocument()
+    })
+  })
+
+  it('waits for manual refresh when document list refresh mode is manual', async () => {
+    mocks.mockGetConfig.mockResolvedValue({ data: { value: 'manual' } })
+
+    render(<ProcessingPanel />)
+
+    await waitFor(() => {
+      expect(screen.getByText('processing.manualRefreshTitle')).toBeInTheDocument()
+    })
+    expect(mocks.mockGetTagged).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('common.refresh'))
+
+    await waitFor(() => {
+      expect(mocks.mockGetTagged).toHaveBeenCalledTimes(1)
+      expect(screen.getByText('Invoice 2024')).toBeInTheDocument()
     })
   })
 })

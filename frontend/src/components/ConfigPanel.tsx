@@ -11,6 +11,7 @@ import { ConfigSectionAdvanced } from './ConfigSectionAdvanced'
 import { Server, Brain, Clock, Tag, Settings } from 'lucide-react'
 
 const SENSITIVE_KEYS = new Set(['paperless_token', 'llm_api_key', 'llm_api_key_vision'])
+const IMMEDIATE_SAVE_KEYS = new Set(['document_list_refresh_mode'])
 
 const TAB_CONFIG = [
   { id: 'paperless', labelKey: 'config.tabServer', Icon: Server },
@@ -43,6 +44,7 @@ export default function ConfigPanel() {
     llm_timeout: '600',
     llm_timeout_vision: '600',
     log_level: 'INFO',
+    document_list_refresh_mode: 'automatic',
     modular_tag_process: '',
     modular_tag_ocr: '',
     modular_tag_ocr_fix: '',
@@ -91,6 +93,14 @@ export default function ConfigPanel() {
         return
       }
       setConfigs((prev) => ({ ...prev, [key]: value }))
+      if (IMMEDIATE_SAVE_KEYS.has(key)) {
+        configApi.set(key, value)
+          .catch((e) => {
+            console.error(`Failed to save ${key}:`, e)
+          })
+          .finally(resolve)
+        return
+      }
       const timeoutId = setTimeout(async () => {
         saveTimeoutsRef.current.delete(key)
         try {

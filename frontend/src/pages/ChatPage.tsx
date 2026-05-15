@@ -1,10 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { documentsApi } from '../api/client'
+import { configApi, documentsApi } from '../api/client'
 import { extractApiError } from '../api/errorUtils'
 import type { ChatDocument, ChatMessage, ProcessingPreview } from '../api/types'
 import { Send, FileText, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
+
+type DocumentListRefreshMode = 'automatic' | 'manual'
+
+let cachedChatDocuments: ChatDocument[] | null = null
+
+export function clearChatDocumentCacheForTests() {
+  cachedChatDocuments = null
+}
 
 export default function ChatPage() {
   const { t } = useTranslation()
@@ -16,6 +24,8 @@ export default function ChatPage() {
   const [loadingDoc, setLoadingDoc] = useState(false)
   const [loadingDocs, setLoadingDocs] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshMode, setRefreshMode] = useState<DocumentListRefreshMode>('automatic')
+  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(cachedChatDocuments !== null)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<ChatDocument[]>([])
@@ -29,7 +39,10 @@ export default function ChatPage() {
     setLoadingDocs(true)
     try {
       const res = await documentsApi.getChatList()
-      setDocuments(res.data.documents || [])
+      const loadedDocuments = res.data.documents || []
+      cachedChatDocuments = loadedDocuments
+      setDocuments(loadedDocuments)
+      setHasLoadedDocuments(true)
       if (res.data.error) {
         setError(res.data.error)
       }
@@ -42,7 +55,33 @@ export default function ChatPage() {
   }, [])
 
   useEffect(() => {
-    loadDocuments()
+    let mounted = true
+
+    const loadRefreshMode = async () => {
+      let mode: DocumentListRefreshMode = 'automatic'
+      try {
+        const res = await configApi.get('document_list_refresh_mode')
+        mode = res.data.value === 'manual' ? 'manual' : 'automatic'
+      } catch {
+        mode = 'automatic'
+      }
+
+      if (!mounted) return
+
+      setRefreshMode(mode)
+      if (cachedChatDocuments !== null) {
+        setDocuments(cachedChatDocuments)
+        setHasLoadedDocuments(true)
+      }
+      if (mode === 'automatic') {
+        loadDocuments()
+      }
+    }
+
+    loadRefreshMode()
+    return () => {
+      mounted = false
+    }
   }, [loadDocuments])
 
   useEffect(() => {
@@ -191,6 +230,11 @@ export default function ChatPage() {
                   </button>
                 ))
               )
+            ) : refreshMode === 'manual' && !hasLoadedDocuments ? (
+              <div className="p-4 text-sm text-gray-500 text-center">
+                <p className="font-medium text-gray-700 mb-1">{t('chat.manualRefreshTitle')}</p>
+                <p>{t('chat.manualRefreshHint')}</p>
+              </div>
             ) : documents.length === 0 ? (
               <div className="p-4 text-sm text-gray-500 text-center">{t('chat.noDocuments')}</div>
             ) : (

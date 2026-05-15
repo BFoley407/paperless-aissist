@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { documentsApi, schedulerApi } from '../api/client'
+import { configApi, documentsApi, schedulerApi } from '../api/client'
 import { SchedulerStatus } from '../api/types'
 import { Play, RefreshCw, FileText, CheckCircle, XCircle, Clock } from 'lucide-react'
 
@@ -11,6 +11,14 @@ interface TaggedDocument {
   created: string
   added: string
   tags: number[]
+}
+
+type DocumentListRefreshMode = 'automatic' | 'manual'
+
+let cachedProcessingDocuments: TaggedDocument[] | null = null
+
+export function clearProcessingDocumentCacheForTests() {
+  cachedProcessingDocuments = null
 }
 
 interface ProcessingStep {
@@ -57,21 +65,18 @@ export default function ProcessingPanel() {
   const [showResult, setShowResult] = useState(false)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null)
   const [resultStepFilter, setResultStepFilter] = useState<'all' | 'failed' | 'completed'>('all')
+  const [refreshMode, setRefreshMode] = useState<DocumentListRefreshMode>('automatic')
+  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(cachedProcessingDocuments !== null)
 
-  useEffect(() => {
-    loadDocuments()
-    loadSchedulerStatus()
-
-    const interval = setInterval(loadSchedulerStatus, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const res = await documentsApi.getTagged()
-      setDocuments(res.data.documents || [])
+      const loadedDocuments = res.data.documents || []
+      cachedProcessingDocuments = loadedDocuments
+      setDocuments(loadedDocuments)
+      setHasLoadedDocuments(true)
       if (res.data.error) {
         setError(res.data.error)
       }
@@ -84,7 +89,7 @@ export default function ProcessingPanel() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const loadSchedulerStatus = async () => {
     try {
@@ -94,6 +99,40 @@ export default function ProcessingPanel() {
       console.error('Failed to load scheduler status:', error)
     }
   }
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadRefreshMode = async () => {
+      let mode: DocumentListRefreshMode = 'automatic'
+      try {
+        const res = await configApi.get('document_list_refresh_mode')
+        mode = res.data.value === 'manual' ? 'manual' : 'automatic'
+      } catch {
+        mode = 'automatic'
+      }
+
+      if (!mounted) return
+
+      setRefreshMode(mode)
+      if (cachedProcessingDocuments !== null) {
+        setDocuments(cachedProcessingDocuments)
+        setHasLoadedDocuments(true)
+      }
+      if (mode === 'automatic') {
+        loadDocuments()
+      }
+    }
+
+    loadRefreshMode()
+    loadSchedulerStatus()
+
+    const interval = setInterval(loadSchedulerStatus, 2000)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [loadDocuments])
 
   const handleProcessAll = async () => {
     setProcessing(true)
@@ -362,6 +401,11 @@ export default function ProcessingPanel() {
 
       {loading ? (
         <div className="text-center py-8 text-gray-500">{t('common.loading')}</div>
+      ) : refreshMode === 'manual' && !hasLoadedDocuments ? (
+        <div className="bg-white rounded-lg border border-gray-200 text-center py-10 px-4 text-gray-500">
+          <p className="font-medium text-gray-700 mb-1">{t('processing.manualRefreshTitle')}</p>
+          <p className="text-sm">{t('processing.manualRefreshHint')}</p>
+        </div>
       ) : documents.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 text-center py-10 px-4 text-gray-500">
           <p className="font-medium text-gray-700 mb-1">{t('processing.noDocuments')}</p>

@@ -49,6 +49,21 @@ export function ConfigSectionAdvanced({ config, onSave }: ConfigSectionProps) {
             </p>
           )}
         </div>
+        <div className="w-64">
+          <label htmlFor="document-list-refresh-mode" className={labelClass}>
+            {t('config.documentListRefreshMode')}
+          </label>
+          <select
+            id="document-list-refresh-mode"
+            value={config.document_list_refresh_mode || 'automatic'}
+            onChange={(e) => handleChange('document_list_refresh_mode', e.target.value)}
+            className={fieldClass}
+          >
+            <option value="automatic">{t('config.documentListRefreshAutomatic')}</option>
+            <option value="manual">{t('config.documentListRefreshManual')}</option>
+          </select>
+          <p className={hintClass}>{t('config.documentListRefreshModeHint')}</p>
+        </div>
       </div>
     </div>
   )
