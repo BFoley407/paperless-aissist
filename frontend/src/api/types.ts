@@ -84,4 +84,5 @@ export interface SchedulerStatus {
   next_run: string | null
   is_processing: boolean
   current_doc_id: number | null
+  paperless_url?: string | null
 }

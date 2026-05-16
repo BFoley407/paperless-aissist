@@ -104,9 +104,11 @@ async def trigger_processing():
     try:
         legacy = await process_tagged_with_state()
         modular = await process_modular_with_state()
+        failed = legacy.get("failed", 0) + modular.get("failed", 0)
         return {
-            "success": True,
+            "success": failed == 0,
             "processed": legacy.get("processed", 0) + modular.get("processed", 0),
+            "failed": failed,
             "results": legacy.get("results", []) + modular.get("results", []),
         }
     except Exception as e:
@@ -186,6 +188,7 @@ async def get_tagged_documents():
     try:
         started = time.perf_counter()
         paperless.reset_metrics()
+        paperless_url = getattr(paperless, "base_url", None)
         tags = await paperless.get_tags()
         tags_by_name = {t["name"]: t["id"] for t in tags}
         trigger_tag_ids: set[int] = set()
@@ -207,12 +210,12 @@ async def get_tagged_documents():
                 "documents": [],
                 "process_tag": process_tag_name,
                 "process_tag_id": process_tag_id,
+                "paperless_url": paperless_url if isinstance(paperless_url, str) else None,
             }
 
         merged: dict[int, dict] = {}
-        for tag_id in trigger_tag_ids:
-            for doc in await paperless.list_documents(tags=[tag_id]):
-                merged[doc["id"]] = doc
+        for doc in await paperless.list_documents(tags_any=sorted(trigger_tag_ids)):
+            merged[doc["id"]] = doc
 
         metrics = paperless.get_metrics()
         logger.debug(
@@ -239,6 +242,7 @@ async def get_tagged_documents():
             "documents": documents,
             "process_tag": process_tag_name,
             "process_tag_id": process_tag_id,
+            "paperless_url": paperless_url if isinstance(paperless_url, str) else None,
         }
     except Exception as e:
         return {"documents": [], "error": str(e)}

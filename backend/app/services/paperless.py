@@ -99,6 +99,7 @@ class PaperlessClient:
     async def list_documents(
         self,
         tags: Optional[list[int]] = None,
+        tags_any: Optional[list[int]] = None,
         search: Optional[str] = None,
         max_page_limit: Optional[int] = None,
     ) -> list[dict]:
@@ -106,6 +107,8 @@ class PaperlessClient:
         params: dict[str, Any] = {"page_size": fetch_size}
         if tags:
             params["tags__id__all"] = ",".join(map(str, tags))
+        if tags_any:
+            params["tags__id__in"] = ",".join(map(str, tags_any))
         if search:
             params["search"] = search
         url = f"{self.base_url}/api/documents/?" + "&".join(

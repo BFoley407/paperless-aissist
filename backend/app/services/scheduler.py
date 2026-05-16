@@ -320,7 +320,10 @@ async def process_modular_tagged_documents() -> dict:
     started = asyncio.get_running_loop().time()
     processor = DocumentProcessor(paperless)
     tag_map = await processor._get_modular_tag_map()
-    trigger_tag_names = list(tag_map.values())
+    process_tag_name = await processor._get_config("process_tag")
+    trigger_tag_names = [
+        tag_name for tag_name in tag_map.values() if tag_name != process_tag_name
+    ]
 
     all_tags = await paperless.get_tags()
     tag_name_to_id = {t["name"]: t["id"] for t in all_tags}
@@ -333,12 +336,8 @@ async def process_modular_tagged_documents() -> dict:
     if not trigger_tag_ids:
         return {"success": True, "processed": 0, "results": []}
 
-    doc_ids: set[int] = set()
-    all_docs = await paperless.list_documents()
-    for doc in all_docs:
-        doc_tags = set(doc.get("tags", []))
-        if doc_tags & trigger_tag_ids:
-            doc_ids.add(doc["id"])
+    docs = await paperless.list_documents(tags_any=sorted(trigger_tag_ids))
+    doc_ids = {doc["id"] for doc in docs}
 
     logger.debug(
         "Scheduler modular scan: %d docs matched across %d trigger tags",
@@ -367,8 +366,21 @@ async def process_modular_tagged_documents() -> dict:
         *[_limited_process(d) for d in doc_ids], return_exceptions=True
     )
 
-    processed = sum(1 for r in results if not isinstance(r, Exception))
-    errors = [str(r) for r in results if isinstance(r, Exception)]
+    successful_results = [
+        r
+        for r in results
+        if not isinstance(r, Exception) and r.get("success") is True
+    ]
+    failed_results = [
+        r
+        for r in results
+        if isinstance(r, Exception) or r.get("success") is not True
+    ]
+    processed = len(successful_results)
+    errors = [
+        str(r) if isinstance(r, Exception) else r.get("error", "Processing failed")
+        for r in failed_results
+    ]
     if errors:
         logger.warning(f"Modular processing errors: {errors}")
     metrics = paperless.get_metrics()
@@ -381,7 +393,8 @@ async def process_modular_tagged_documents() -> dict:
         asyncio.get_running_loop().time() - started,
     )
     return {
-        "success": True,
+        "success": len(failed_results) == 0,
         "processed": processed,
+        "failed": len(failed_results),
         "results": [r for r in results if not isinstance(r, Exception)],
     }

@@ -86,7 +86,7 @@ volumes:
 1. Go to **Settings** and verify your Paperless and Ollama URLs
 2. Set the LLM model (see recommendations below)
 3. Create at minimum two tags in Paperless-ngx: `ai-process` and `ai-processed`. Optionally create modular step tags (see below) for per-step triggering.
-4. Tag any document with `ai-process` — it will be processed immediately or on the next scheduler tick
+4. Tag any document with `ai-process` for metadata processing using existing Paperless text. For Vision OCR plus metadata processing, add both `ai-ocr` and `ai-process`.
 
 ## Configuration
 

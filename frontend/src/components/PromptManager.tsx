@@ -11,7 +11,7 @@ const PROMPT_TYPE_TO_CONFIG_KEY: Record<string, string | undefined> = {
   extract: 'modular_tag_fields',
   type_specific: 'modular_tag_fields',
   vision_ocr: 'modular_tag_ocr',
-  ocr_fix: 'modular_tag_ocr',
+  ocr_fix: 'modular_tag_ocr_fix',
   classify: 'modular_tag_process',
 }
 
@@ -55,6 +55,7 @@ export default function PromptManager() {
     user_template: '',
     is_active: true,
   })
+  const userTemplateRequired = formData.prompt_type !== 'vision_ocr'
 
   const loadData = useCallback(async () => {
     try {
@@ -372,7 +373,7 @@ export default function PromptManager() {
                 <textarea
                   value={formData.user_template}
                   onChange={(e) => setFormData({ ...formData, user_template: e.target.value })}
-                  required
+                  required={userTemplateRequired}
                   rows={4}
                   placeholder={t('prompts.userTemplatePlaceholder')}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"

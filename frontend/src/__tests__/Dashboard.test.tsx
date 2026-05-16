@@ -1,0 +1,86 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
+
+import Dashboard from '../components/Dashboard'
+
+const mocks = vi.hoisted(() => ({
+  mockGetStats: vi.fn(),
+  mockGetDaily: vi.fn(),
+  mockGetRecent: vi.fn(),
+  mockGetConfig: vi.fn(),
+}))
+
+vi.mock('../api/client', () => ({
+  configApi: {
+    get: mocks.mockGetConfig,
+  },
+  statsApi: {
+    get: mocks.mockGetStats,
+    getDaily: mocks.mockGetDaily,
+    getRecent: mocks.mockGetRecent,
+    reset: vi.fn(),
+  },
+}))
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, params?: { id?: number }) => (
+      params?.id ? `${key} ${params.id}` : key
+    ),
+  }),
+}))
+
+vi.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PieChart: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pie: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Cell: () => <div />,
+  BarChart: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Bar: () => <div />,
+  XAxis: () => <div />,
+  YAxis: () => <div />,
+  Tooltip: () => <div />,
+}))
+
+describe('Dashboard', () => {
+  beforeEach(() => {
+    mocks.mockGetStats.mockResolvedValue({
+      data: {
+        total_processed: 1,
+        success: 1,
+        failed: 0,
+        skipped: 0,
+        success_rate: 100,
+        avg_processing_time_ms: 1200,
+      },
+    })
+    mocks.mockGetDaily.mockResolvedValue({ data: [] })
+    mocks.mockGetRecent.mockResolvedValue({
+      data: [
+        {
+          id: 9,
+          document_id: 42,
+          document_title: 'Recent Invoice',
+          status: 'success',
+          llm_provider: null,
+          llm_model: 'qwen3',
+          error_message: null,
+          processing_time_ms: 1200,
+          processed_at: '2026-05-16T10:00:00Z',
+        },
+      ],
+    })
+    mocks.mockGetConfig.mockResolvedValue({ data: { value: 'http://paperless.test/' } })
+  })
+
+  it('renders recent processing log document links with visible IDs', async () => {
+    render(<Dashboard />)
+
+    const link = await screen.findByRole('link', { name: /Recent Invoice/ })
+    expect(link).toHaveAttribute('href', 'http://paperless.test/documents/42')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noreferrer')
+    expect(screen.getByText('#42')).toBeInTheDocument()
+  })
+})

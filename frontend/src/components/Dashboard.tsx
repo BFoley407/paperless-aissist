@@ -12,8 +12,9 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { statsApi } from '../api/client'
+import { configApi, statsApi } from '../api/client'
 import { RefreshCw, Trash2 } from 'lucide-react'
+import { buildPaperlessDocumentUrl } from '../utils/paperlessLinks'
 
 const COLORS = ['#22c55e', '#ef4444', '#f59e0b']
 
@@ -54,6 +55,7 @@ export default function Dashboard() {
   const [resetting, setResetting] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [logFilter, setLogFilter] = useState<'all' | 'success' | 'failed' | 'skipped'>('all')
+  const [paperlessUrl, setPaperlessUrl] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -62,14 +64,16 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       setLoadError(null)
-      const [statsRes, dailyRes, recentRes] = await Promise.all([
+      const [statsRes, dailyRes, recentRes, paperlessUrlRes] = await Promise.all([
         statsApi.get(),
         statsApi.getDaily(7),
         statsApi.getRecent(10),
+        configApi.get('paperless_url').catch(() => ({ data: { value: null } })),
       ])
       setStats(statsRes.data)
       setDailyStats(dailyRes.data)
       setRecentLogs(recentRes.data)
+      setPaperlessUrl(paperlessUrlRes.data.value || null)
     } catch (error) {
       const message = error instanceof Error ? error.message : t('dashboard.loadFailed')
       setLoadError(message)
@@ -261,43 +265,70 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {filteredLogs.map((log) => (
-                <tr key={log.id} className="border-b hover:bg-gray-50">
-                  <td className="py-3 px-4">
-                    {log.document_title || t('dashboard.docFallback', { id: log.document_id })}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        log.status === 'success'
-                          ? 'bg-green-100 text-green-800'
-                          : log.status === 'failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {log.status}
-                    </span>
-                    {log.status === 'failed' && log.error_message && (
-                      <p
-                        className="mt-1 text-xs text-red-600 max-w-xs truncate"
-                        title={log.error_message}
+              {filteredLogs.map((log) => {
+                const documentUrl = buildPaperlessDocumentUrl(paperlessUrl, log.document_id)
+
+                return (
+                  <tr key={log.id} className="border-b hover:bg-gray-50">
+                    <td className="py-3 px-4">
+                      {documentUrl ? (
+                        <a
+                          href={documentUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium text-blue-700 hover:underline"
+                        >
+                          {log.document_title
+                            || t('dashboard.docFallback', { id: log.document_id })}
+                          <span className="ml-2 text-xs text-gray-500">
+                            #{log.document_id}
+                          </span>
+                        </a>
+                      ) : (
+                        <span>
+                          {log.document_title
+                            || t('dashboard.docFallback', { id: log.document_id })}
+                          {log.document_id && (
+                            <span className="ml-2 text-xs text-gray-500">
+                              #{log.document_id}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          log.status === 'success'
+                            ? 'bg-green-100 text-green-800'
+                            : log.status === 'failed'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                        }`}
                       >
-                        {log.error_message}
-                      </p>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">{log.llm_model || '-'}</td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {log.processing_time_ms
-                      ? `${(log.processing_time_ms / 1000).toFixed(1)}s`
-                      : '-'}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">
-                    {new Date(log.processed_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+                        {log.status}
+                      </span>
+                      {log.status === 'failed' && log.error_message && (
+                        <p
+                          className="mt-1 text-xs text-red-600 max-w-xs truncate"
+                          title={log.error_message}
+                        >
+                          {log.error_message}
+                        </p>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">{log.llm_model || '-'}</td>
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {log.processing_time_ms
+                        ? `${(log.processing_time_ms / 1000).toFixed(1)}s`
+                        : '-'}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {new Date(log.processed_at).toLocaleString()}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

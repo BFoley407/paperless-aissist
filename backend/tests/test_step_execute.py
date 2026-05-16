@@ -15,7 +15,7 @@ from app.services.steps.document_type_step import DocumentTypeStep
 from app.services.steps.tags_step import TagsStep
 from app.services.steps.fields_step import FieldsStep
 from app.services.processor import DocumentProcessor
-from app.services.steps.base import StepContext
+from app.services.steps.base import StepContext, StepResult
 from app.models import Prompt
 
 
@@ -741,6 +741,104 @@ class TestResolveProposedChanges:
             {"id": 1, "name": "Invoice Number", "value": "INV-123"},
             {"id": 2, "name": "Amount", "value": "$500"},
         ]
+
+
+class TestDocumentProcessorFailureHandling:
+    @pytest.mark.asyncio
+    async def test_failed_step_result_skips_finalization_and_logs_failure(
+        self, mock_paperless, mock_llm
+    ):
+        """A step returning an error must leave trigger tags untouched for retry."""
+        mock_llm.provider = "test-provider"
+        mock_llm.model = "test-model"
+
+        failed_step = MagicMock()
+        failed_step.name = "title"
+        failed_step.can_handle.return_value = True
+        failed_step.execute = AsyncMock(return_value=StepResult(error="timeout"))
+        failed_step.update_metadata = AsyncMock()
+
+        successful_step = MagicMock()
+        successful_step.name = "correspondent"
+        successful_step.can_handle.return_value = True
+        successful_step.execute = AsyncMock(
+            return_value=StepResult(data={"correspondent": 1})
+        )
+        successful_step.update_metadata = AsyncMock()
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._build_steps = AsyncMock(return_value=[failed_step, successful_step])
+        processor._get_config_dict = AsyncMock(
+            return_value={
+                "modular_tag_process": "ai-process",
+                "modular_tag_title": "ai-title",
+                "modular_tag_correspondent": "ai-correspondent",
+            }
+        )
+        processor._get_config = AsyncMock(
+            side_effect=lambda key, default=None: {
+                "process_tag": "ai-process",
+                "processed_tag": "ai-processed",
+            }.get(key, default)
+        )
+        processor._log_processing = AsyncMock(return_value=123)
+        processor._apply_metadata_update = AsyncMock()
+        processor._apply_tag_updates = AsyncMock()
+
+        with patch(
+            "app.services.processor.LLMHandlerManager.get_handler",
+            AsyncMock(return_value=mock_llm),
+        ):
+            result = await processor.process_document(1)
+
+        assert result["success"] is False
+        assert "timeout" in result["error"]
+        assert result["steps"][0]["status"] == "failed"
+        assert result["steps"][0]["error"] == "timeout"
+        successful_step.execute.assert_not_awaited()
+
+        processor._apply_metadata_update.assert_not_awaited()
+        processor._apply_tag_updates.assert_not_awaited()
+        mock_paperless.update_document.assert_not_awaited()
+
+        failed_log_call = processor._log_processing.await_args_list[-1].kwargs
+        assert failed_log_call["status"] == "failed"
+        assert "timeout" in failed_log_call["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_process_tagged_documents_counts_only_successful_results(
+        self, mock_paperless
+    ):
+        """Batch counts must not treat failed processing results as processed."""
+        mock_paperless.get_tags = AsyncMock(
+            return_value=[{"id": 5, "name": "ai-process"}]
+        )
+        mock_paperless.list_documents = AsyncMock(
+            return_value=[
+                {"id": 1, "title": "Ok", "tags": [5]},
+                {"id": 2, "title": "Failed", "tags": [5]},
+            ]
+        )
+        mock_paperless.reset_metrics = MagicMock()
+        mock_paperless.get_metrics = MagicMock(
+            return_value={"requests": 1, "paged_requests": 1}
+        )
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._get_config = AsyncMock(return_value="ai-process")
+        processor.process_document = AsyncMock(
+            side_effect=[
+                {"success": True, "document_id": 1},
+                {"success": False, "document_id": 2, "error": "timeout"},
+            ]
+        )
+
+        result = await processor.process_tagged_documents()
+
+        assert result["success"] is False
+        assert result["processed"] == 1
+        assert result["failed"] == 1
+        assert [item["document_id"] for item in result["results"]] == [1, 2]
 
 
 class TestProcessorTagMerge:

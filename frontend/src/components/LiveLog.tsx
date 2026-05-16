@@ -25,9 +25,9 @@ export default function LiveLog() {
   const pausedRef = useRef(false)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectDelayRef = useRef(1000)
-  const mountedRef = useRef(true)
   const pendingRef = useRef<string[]>([])
   const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const connectionIdRef = useRef(0)
 
   pausedRef.current = paused
 
@@ -42,7 +42,9 @@ export default function LiveLog() {
   }, [])
 
   useEffect(() => {
-    mountedRef.current = true
+    const connectionId = connectionIdRef.current + 1
+    connectionIdRef.current = connectionId
+    let disposed = false
     const token = localStorage.getItem('paperless_token')
     const headers: Record<string, string> = {}
     if (token) {
@@ -50,30 +52,35 @@ export default function LiveLog() {
     }
 
     let activeController: AbortController | null = null
+    const isCurrentConnection = () => !disposed && connectionIdRef.current === connectionId
 
     const connect = () => {
+      if (!isCurrentConnection()) return
+      if (activeController) {
+        activeController.abort()
+      }
       activeController = fetchEventSource({
         url: '/api/stats/logs/stream',
         headers,
         onopen: () => {
-          if (!mountedRef.current) return
+          if (!isCurrentConnection()) return
           setConnected(true)
           setLines([])
           pendingRef.current = []
           reconnectDelayRef.current = 1000
         },
         onerror: () => {
-          if (!mountedRef.current) return
+          if (!isCurrentConnection()) return
           setConnected(false)
           scheduleReconnect()
         },
         onclose: () => {
-          if (!mountedRef.current) return
+          if (!isCurrentConnection()) return
           setConnected(false)
           scheduleReconnect()
         },
         onmessage: (data) => {
-          if (!mountedRef.current) return
+          if (!isCurrentConnection()) return
           try {
             const line = JSON.parse(data)
             if (typeof line === 'string') {
@@ -93,7 +100,7 @@ export default function LiveLog() {
     }
 
     const scheduleReconnect = () => {
-      if (!mountedRef.current) return
+      if (!isCurrentConnection()) return
       if (reconnectTimeoutRef.current) return
       reconnectTimeoutRef.current = setTimeout(() => {
         reconnectTimeoutRef.current = null
@@ -105,7 +112,7 @@ export default function LiveLog() {
     connect()
 
     return () => {
-      mountedRef.current = false
+      disposed = true
       if (batchTimerRef.current) {
         clearTimeout(batchTimerRef.current)
         batchTimerRef.current = null

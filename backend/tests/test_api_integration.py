@@ -120,11 +120,15 @@ def test_stats_log_stream_asyncio_imported(client):
     assert "asyncio" in names
 
 
-def test_tagged_documents_uses_tag_filtered_requests_and_deduplicates(client):
+def test_tagged_documents_uses_combined_tag_filter_and_deduplicates(client):
     client.post("/api/config", json={"key": "process_tag", "value": "ai-process"})
+    client.post(
+        "/api/config", json={"key": "paperless_url", "value": "http://paperless.local/"}
+    )
     paperless = MagicMock()
+    paperless.base_url = "http://paperless.local/"
     paperless.reset_metrics = MagicMock()
-    paperless.get_metrics = MagicMock(return_value={"requests": 3, "paged_requests": 2})
+    paperless.get_metrics = MagicMock(return_value={"requests": 2, "paged_requests": 1})
     paperless.get_tags = AsyncMock(
         return_value=[
             {"id": 5, "name": "ai-process"},
@@ -132,15 +136,11 @@ def test_tagged_documents_uses_tag_filtered_requests_and_deduplicates(client):
         ]
     )
     paperless.list_documents = AsyncMock(
-        side_effect=[
-            [
-                {"id": 1, "title": "Legacy", "created": "2026-01-01", "tags": [5]},
-                {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
-            ],
-            [
-                {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
-                {"id": 3, "title": "Title", "created": "2026-01-03", "tags": [7]},
-            ],
+        return_value=[
+            {"id": 1, "title": "Legacy", "created": "2026-01-01", "tags": [5]},
+            {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
+            {"id": 2, "title": "Both", "created": "2026-01-02", "tags": [5, 7]},
+            {"id": 3, "title": "Title", "created": "2026-01-03", "tags": [7]},
         ]
     )
 
@@ -160,11 +160,8 @@ def test_tagged_documents_uses_tag_filtered_requests_and_deduplicates(client):
     data = response.json()
     assert [doc["id"] for doc in data["documents"]] == [1, 2, 3]
     assert data["process_tag_id"] == 5
-    assert paperless.list_documents.call_count == 2
-    tag_filters = {
-        tuple(call.kwargs["tags"]) for call in paperless.list_documents.call_args_list
-    }
-    assert tag_filters == {(5,), (7,)}
+    assert data["paperless_url"] == "http://paperless.local/"
+    paperless.list_documents.assert_awaited_once_with(tags_any=[5, 7])
 
 
 def test_tagged_documents_no_trigger_tags_does_not_scan_documents(client):
@@ -189,6 +186,161 @@ def test_tagged_documents_no_trigger_tags_does_not_scan_documents(client):
     assert response.status_code == 200
     assert response.json()["documents"] == []
     paperless.list_documents.assert_not_called()
+
+
+def test_paperless_client_list_documents_supports_all_and_any_tag_filters(monkeypatch):
+    from app.services.paperless import PaperlessClient
+
+    client_instance = PaperlessClient(base_url="http://paperless.local", token="token")
+    captured_urls = []
+
+    async def fake_fetch_size():
+        return 100
+
+    async def fake_max_pages():
+        return 10
+
+    async def fake_get_all_pages(url, max_page_limit):
+        captured_urls.append((url, max_page_limit))
+        return []
+
+    monkeypatch.setattr(client_instance, "_get_fetch_size", fake_fetch_size)
+    monkeypatch.setattr(client_instance, "_get_max_pages", fake_max_pages)
+    monkeypatch.setattr(client_instance, "_get_all_pages", fake_get_all_pages)
+
+    import asyncio
+
+    asyncio.run(client_instance.list_documents(tags=[1, 2], tags_any=[3, 4]))
+
+    url, page_limit = captured_urls[0]
+    assert page_limit == 10
+    assert "tags__id__all=1,2" in url
+    assert "tags__id__in=3,4" in url
+
+
+@pytest.mark.asyncio
+async def test_modular_scheduler_scan_uses_combined_tag_filter():
+    from app.services import scheduler as scheduler_service
+
+    paperless = MagicMock()
+    paperless.reset_metrics = MagicMock()
+    paperless.get_metrics = MagicMock(return_value={"requests": 2, "paged_requests": 1})
+    paperless.get_tags = AsyncMock(
+        return_value=[
+            {"id": 7, "name": "ai-title"},
+            {"id": 8, "name": "ai-tags"},
+        ]
+    )
+    paperless.list_documents = AsyncMock(
+        return_value=[
+            {"id": 3, "title": "Title", "tags": [7]},
+            {"id": 4, "title": "Tags", "tags": [8]},
+        ]
+    )
+
+    processor = MagicMock()
+    processor._get_config = AsyncMock(return_value="ai-process")
+    processor._get_modular_tag_map = AsyncMock(
+        return_value={"title": "ai-title", "tags": "ai-tags"}
+    )
+    processor.process_document = AsyncMock(
+        side_effect=[
+            {"success": True, "document_id": 3},
+            {"success": True, "document_id": 4},
+        ]
+    )
+
+    with (
+        patch(
+            "app.services.paperless_manager.PaperlessClientManager.get_client",
+            AsyncMock(return_value=paperless),
+        ),
+        patch("app.services.processor.DocumentProcessor", return_value=processor),
+    ):
+        result = await scheduler_service.process_modular_tagged_documents()
+
+    assert result["processed"] == 2
+    paperless.list_documents.assert_awaited_once_with(tags_any=[7, 8])
+    assert processor.process_document.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_modular_scheduler_excludes_process_tag_and_counts_failures():
+    from app.services import scheduler as scheduler_service
+
+    paperless = MagicMock()
+    paperless.reset_metrics = MagicMock()
+    paperless.get_metrics = MagicMock(return_value={"requests": 2, "paged_requests": 1})
+    paperless.get_tags = AsyncMock(
+        return_value=[
+            {"id": 5, "name": "ai-process"},
+            {"id": 7, "name": "ai-title"},
+        ]
+    )
+    paperless.list_documents = AsyncMock(
+        return_value=[
+            {"id": 3, "title": "Title", "tags": [7]},
+            {"id": 4, "title": "Failed", "tags": [7]},
+        ]
+    )
+
+    processor = MagicMock()
+    processor._get_config = AsyncMock(return_value="ai-process")
+    processor._get_modular_tag_map = AsyncMock(
+        return_value={"process": "ai-process", "title": "ai-title"}
+    )
+    processor.process_document = AsyncMock(
+        side_effect=[
+            {"success": True, "document_id": 3},
+            {"success": False, "document_id": 4, "error": "timeout"},
+        ]
+    )
+
+    with (
+        patch(
+            "app.services.paperless_manager.PaperlessClientManager.get_client",
+            AsyncMock(return_value=paperless),
+        ),
+        patch("app.services.processor.DocumentProcessor", return_value=processor),
+    ):
+        result = await scheduler_service.process_modular_tagged_documents()
+
+    assert result["success"] is False
+    assert result["processed"] == 1
+    assert result["failed"] == 1
+    paperless.list_documents.assert_awaited_once_with(tags_any=[7])
+
+
+def test_trigger_processing_reports_failed_results(client):
+    with (
+        patch("app.routers.documents.try_trigger_processing", return_value=(True, "")),
+        patch(
+            "app.routers.documents.process_tagged_with_state",
+            AsyncMock(
+                return_value={
+                    "success": False,
+                    "processed": 1,
+                    "failed": 1,
+                    "results": [
+                        {"success": True, "document_id": 1},
+                        {"success": False, "document_id": 2, "error": "timeout"},
+                    ],
+                }
+            ),
+        ),
+        patch(
+            "app.routers.documents.process_modular_with_state",
+            AsyncMock(return_value={"success": True, "processed": 0, "failed": 0, "results": []}),
+        ),
+        patch("app.routers.documents._clear_processing"),
+    ):
+        response = client.post("/api/documents/trigger")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is False
+    assert data["processed"] == 1
+    assert data["failed"] == 1
 
 
 def test_metadata_routes_pass_refresh_to_paperless_client(client):

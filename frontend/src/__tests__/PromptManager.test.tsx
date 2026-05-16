@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import { getTriggerTag } from '../components/PromptManager'
@@ -145,6 +146,11 @@ describe('getTriggerTag', () => {
     const result = getTriggerTag('title', {})
     expect(result).toBe('ai-title')
   })
+
+  it('returns OCR trigger tag defaults for vision OCR and OCR Fix prompts', () => {
+    expect(getTriggerTag('vision_ocr', {})).toBe('ai-ocr')
+    expect(getTriggerTag('ocr_fix', {})).toBe('ai-ocr-fix')
+  })
 })
 
 describe('PromptManager Component', () => {
@@ -178,6 +184,90 @@ describe('PromptManager Component', () => {
     await waitFor(() => {
       const tagCells = screen.getAllByText('ai-process')
       expect(tagCells.length).toBe(1)
+    })
+  })
+
+  it('shows different trigger tags for active Vision OCR and OCR Fix prompts', async () => {
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 10,
+            name: 'Vision OCR',
+            prompt_type: 'vision_ocr',
+            document_type_filter: null,
+            system_prompt: 'Read the document',
+            user_template: '',
+            is_active: true,
+          },
+          {
+            id: 11,
+            name: 'OCR Fix',
+            prompt_type: 'ocr_fix',
+            document_type_filter: null,
+            system_prompt: 'Fix OCR errors',
+            user_template: 'Content: {{content}}',
+            is_active: true,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({}))
+
+    render(<PromptManager />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Vision OCR')).toBeInTheDocument()
+      expect(screen.getByText('OCR Fix')).toBeInTheDocument()
+      expect(screen.getByText('ai-ocr')).toBeInTheDocument()
+      expect(screen.getByText('ai-ocr-fix')).toBeInTheDocument()
+    })
+  })
+
+  it('allows saving a Vision OCR prompt with an empty user template', async () => {
+    const user = userEvent.setup()
+    mockPost.mockResolvedValue(createMockResponse({}))
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 10,
+            name: 'Vision OCR',
+            prompt_type: 'vision_ocr',
+            document_type_filter: null,
+            system_prompt: 'Read the document',
+            user_template: 'Existing template',
+            is_active: true,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({}))
+      .mockResolvedValueOnce(createMockResponse([]))
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({}))
+
+    const { container } = render(<PromptManager />)
+
+    await screen.findByText('Vision OCR')
+    const editButton = container.querySelector('tbody button')
+    expect(editButton).not.toBeNull()
+    await user.click(editButton as HTMLButtonElement)
+
+    const textareas = screen.getAllByRole('textbox')
+    const userTemplate = textareas[textareas.length - 1]
+    await user.clear(userTemplate)
+    await user.click(screen.getByRole('button', { name: /update/i }))
+
+    await waitFor(() => {
+      expect(mockPost).toHaveBeenCalledWith(10, {
+        name: 'Vision OCR',
+        prompt_type: 'vision_ocr',
+        document_type_filter: '',
+        system_prompt: 'Read the document',
+        user_template: '',
+        is_active: true,
+      })
     })
   })
 
