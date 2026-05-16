@@ -123,7 +123,7 @@
     "modularSection": "Modular Tag Workflows",
     "modularSectionHint": "Customize the Paperless tag names that trigger each processing step. Leave blank to use the default.",
     "modularTagProcess": "Full Pipeline Tag",
-    "modularTagProcessHint": "Triggers all 7 steps (OCR → OCR fix → title → correspondent → type → tags → fields). Default: ai-process",
+    "modularTagProcessHint": "Triggers the standard metadata pipeline using existing Paperless text. Default: ai-process",
     "modularTagOcr": "OCR Tag",
     "modularTagOcrHint": "Triggers vision OCR only (no LLM fix). Default: ai-ocr",
     "modularTagOcrFix": "OCR Fix Tag",

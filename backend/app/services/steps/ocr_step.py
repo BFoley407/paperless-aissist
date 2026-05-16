@@ -1,7 +1,7 @@
 """OCR extraction step for the document processing pipeline.
 
-Triggered by the force_ocr tag; extracts text from PDFs using the vision LLM
-and stores the result as the document's content.
+Triggered by ai-ocr or the force_ocr tag; extracts text from PDFs using the
+vision LLM and stores the result as the document's content.
 """
 
 import logging
@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 class OCRStep(AbstractStep):
     """Vision-based OCR extraction step.
 
-    Triggered by the force_ocr tag. Extracts text from PDFs using VisionPipeline
-    and updates ctx.ocr_text and the document content.
+    Triggered by ai-ocr or the force_ocr tag. Extracts text from PDFs using
+    VisionPipeline and updates ctx.ocr_text and the document content.
     """
 
     name = "ocr"
@@ -33,6 +33,9 @@ class OCRStep(AbstractStep):
             if config
             else "force-ocr-fix"
         )
+        self.ocr_tag = (
+            (config.get("modular_tag_ocr") or "ai-ocr") if config else "ai-ocr"
+        )
 
     @classmethod
     async def from_config(cls, config):
@@ -40,8 +43,8 @@ class OCRStep(AbstractStep):
         return cls(config)
 
     def can_handle(self, tags: set[str]) -> bool:
-        """Return True if the force_ocr tag is present."""
-        return self.force_ocr_tag in tags
+        """Return True if an explicit OCR trigger tag is present."""
+        return self.ocr_tag in tags or self.force_ocr_tag in tags
 
     async def execute(self, ctx: StepContext) -> StepResult:
         """Run vision OCR on the document PDF and update ctx.ocr_text."""

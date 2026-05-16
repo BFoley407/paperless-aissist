@@ -8,6 +8,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 # Imports for tasks
+from app.services.steps.ocr_step import OCRStep
 from app.services.steps.title_step import TitleStep
 from app.services.steps.correspondent_step import CorrespondentStep
 from app.services.steps.document_type_step import DocumentTypeStep
@@ -16,6 +17,113 @@ from app.services.steps.fields_step import FieldsStep
 from app.services.processor import DocumentProcessor
 from app.services.steps.base import StepContext
 from app.models import Prompt
+
+
+class TestOCRStep:
+    @pytest.fixture
+    def ctx(self, mock_paperless, mock_llm):
+        return StepContext(
+            doc_id=1,
+            paperless=mock_paperless,
+            llm=mock_llm,
+            config={
+                "enable_vision": "false",
+                "modular_tag_process": "ai-process",
+                "modular_tag_ocr": "ai-ocr",
+                "force_ocr_tag": "force_ocr",
+            },
+            trigger_tags={"ai-process"},
+            ocr_text="Existing OCR text.",
+        )
+
+    @pytest.mark.asyncio
+    async def test_ai_process_does_not_run_vision_ocr_when_enabled(
+        self, ctx, mock_paperless
+    ):
+        """ai-process alone must not call Vision OCR even when Vision is configured."""
+        ctx.config["enable_vision"] = "true"
+        step = await OCRStep.from_config(ctx.config)
+
+        assert step.can_handle(ctx.trigger_tags) is False
+
+        mock_paperless.get_document_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_modular_ocr_tag_runs_vision_ocr_when_enabled(
+        self, ctx, mock_paperless
+    ):
+        """ai-ocr fetches the PDF and calls Vision OCR."""
+        ctx.config["enable_vision"] = "true"
+        ctx.trigger_tags = {"ai-ocr"}
+        vision_pipeline = AsyncMock()
+        vision_pipeline.extract_text_from_pdf = AsyncMock(
+            return_value={"text": "Vision OCR text", "raw": ""}
+        )
+
+        with (
+            patch("app.services.steps.ocr_step.VisionPipeline.create") as create_pipeline,
+            patch("app.database.get_async_session") as mock_get_session,
+        ):
+            create_pipeline.return_value = vision_pipeline
+            mock_session = AsyncMock()
+            mock_session.exec = AsyncMock(
+                return_value=MagicMock(first=MagicMock(return_value=None))
+            )
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            step = await OCRStep.from_config(ctx.config)
+            result = await step.execute(ctx)
+
+        mock_paperless.get_document_file.assert_awaited_once_with(1)
+        vision_pipeline.extract_text_from_pdf.assert_awaited_once_with(
+            b"fake pdf bytes", prompt=None
+        )
+        assert result.data == {"text": "Vision OCR text"}
+        assert result.error is None
+        assert ctx.ocr_text == "Vision OCR text"
+
+    @pytest.mark.asyncio
+    async def test_uses_active_vision_ocr_prompt(self, ctx):
+        """OCRStep passes the active vision_ocr system prompt to Vision OCR."""
+        ctx.config["enable_vision"] = "true"
+        ctx.trigger_tags = {"ai-ocr"}
+        vision_pipeline = AsyncMock()
+        vision_pipeline.extract_text_from_pdf = AsyncMock(
+            return_value={"text": "Prompted OCR text", "raw": ""}
+        )
+        mock_prompt = MagicMock(spec=Prompt)
+        mock_prompt.system_prompt = "Read every page carefully."
+
+        with (
+            patch("app.services.steps.ocr_step.VisionPipeline.create") as create_pipeline,
+            patch("app.database.get_async_session") as mock_get_session,
+        ):
+            create_pipeline.return_value = vision_pipeline
+            mock_session = AsyncMock()
+            mock_session.exec = AsyncMock(
+                return_value=MagicMock(first=MagicMock(return_value=mock_prompt))
+            )
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            step = await OCRStep.from_config(ctx.config)
+            await step.execute(ctx)
+
+        vision_pipeline.extract_text_from_pdf.assert_awaited_once_with(
+            b"fake pdf bytes", prompt="Read every page carefully."
+        )
+
+    def test_modular_ocr_fix_tag_does_not_trigger_vision_ocr(self, ctx):
+        """ai-ocr-fix is handled by OCRFixStep, not by OCRStep."""
+        step = OCRStep(ctx.config)
+
+        assert step.can_handle({"ai-ocr-fix"}) is False
+
+    def test_combined_ai_ocr_and_ai_process_allows_ocr_step(self, ctx):
+        """Combining ai-ocr with ai-process lets OCR run before normal processing."""
+        ctx.trigger_tags = {"ai-ocr", "ai-process"}
+        step = OCRStep(ctx.config)
+
+        assert step.can_handle(ctx.trigger_tags) is True
 
 
 @patch("app.database.get_async_session")

@@ -123,7 +123,7 @@
     "modularSection": "Modulare Tag-Workflows",
     "modularSectionHint": "Passe die Paperless-Tag-Namen an, die die einzelnen Verarbeitungsschritte auslösen. Leer lassen für den Standardwert.",
     "modularTagProcess": "Vollständige Pipeline Tag",
-    "modularTagProcessHint": "Löst alle 7 Schritte aus (OCR → OCR-Korrektur → Titel → Korrespondent → Typ → Tags → Felder). Standard: ai-process",
+    "modularTagProcessHint": "Löst die Standard-Metadatenpipeline mit vorhandenem Paperless-Text aus. Standard: ai-process",
     "modularTagOcr": "OCR-Tag",
     "modularTagOcrHint": "Löst nur Vision-OCR aus (kein LLM-Fix). Standard: ai-ocr",
     "modularTagOcrFix": "OCR-Korrektur-Tag",

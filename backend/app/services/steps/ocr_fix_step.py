@@ -1,7 +1,7 @@
 """OCR fix/refinement step for the document processing pipeline.
 
-Triggered by force_ocr_fix or force_ocr tags; applies an LLM pass to correct
-OCR errors in the existing ctx.ocr_text.
+Triggered by ai-ocr-fix, force_ocr_fix, or force_ocr tags; applies an LLM pass
+to correct OCR errors in the existing ctx.ocr_text.
 """
 
 import logging
@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 class OCRFixStep(AbstractStep):
     """LLM-based OCR post-processing step.
 
-    Triggered by force_ocr_fix or force_ocr tags. Rewrites ctx.ocr_text
-    to fix recognition errors using the ocr_fix prompt template.
+    Triggered by ai-ocr-fix, force_ocr_fix, or force_ocr tags. Rewrites
+    ctx.ocr_text to fix recognition errors using the ocr_fix prompt template.
     """
 
     name = "ocr_fix"
@@ -32,6 +32,11 @@ class OCRFixStep(AbstractStep):
             if config
             else "force-ocr-fix"
         )
+        self.ocr_fix_tag = (
+            (config.get("modular_tag_ocr_fix") or "ai-ocr-fix")
+            if config
+            else "ai-ocr-fix"
+        )
 
     @classmethod
     async def from_config(cls, config):
@@ -39,8 +44,12 @@ class OCRFixStep(AbstractStep):
         return cls(config)
 
     def can_handle(self, tags: set[str]) -> bool:
-        """Return True if force_ocr_fix or force_ocr tag is present."""
-        return self.force_ocr_fix_tag in tags or self.force_ocr_tag in tags
+        """Return True if an OCR-fix trigger tag is present."""
+        return (
+            self.ocr_fix_tag in tags
+            or self.force_ocr_fix_tag in tags
+            or self.force_ocr_tag in tags
+        )
 
     async def execute(self, ctx: StepContext) -> StepResult:
         """Apply OCR fix LLM pass to ctx.ocr_text and update the document content."""
