@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone, timedelta
 
 import pytest
 
@@ -65,6 +66,7 @@ def test_stats_endpoints(client):
                 document_title="Date Test",
                 status="success",
                 llm_response='{"steps":[{"name":"date","details":{"created_date":"2026-04-28"}}]}',
+                processed_at=datetime(2026, 5, 17, 16, 49, 9, 467710),
             )
         )
 
@@ -78,6 +80,23 @@ def test_stats_endpoints(client):
     response = client.get("/api/stats/recent?limit=10")
     assert response.status_code == 200
     assert any(log.get("llm_response") for log in response.json())
+    date_log = next(log for log in response.json() if log["document_id"] == 99)
+    assert date_log["processed_at"] == "2026-05-17T16:49:09.467710Z"
+
+
+def test_stats_datetime_serialization_marks_utc():
+    from app.routers.stats import _serialize_utc_datetime
+
+    assert (
+        _serialize_utc_datetime(datetime(2026, 5, 17, 16, 49, 9, 467710))
+        == "2026-05-17T16:49:09.467710Z"
+    )
+    assert (
+        _serialize_utc_datetime(
+            datetime(2026, 5, 17, 18, 49, 9, tzinfo=timezone(timedelta(hours=2)))
+        )
+        == "2026-05-17T16:49:09Z"
+    )
 
 
 def test_stats_bounds(client):
