@@ -14,6 +14,8 @@ from app.services.steps.fields_step import FieldsStep
 CONFIG = {
     "force_ocr_tag": "force_ocr",
     "force_ocr_fix_tag": "force-ocr-fix",
+    "modular_tag_ocr": "ai-ocr",
+    "modular_tag_ocr_fix": "ai-ocr-fix",
     "modular_tag_process": "ai-process",
     "modular_tag_title": "ai-title",
     "modular_tag_correspondent": "ai-correspondent",
@@ -38,6 +40,10 @@ def test_ocr_step_ignores_ai_process():
     step = OCRStep(CONFIG)
     assert step.can_handle({"ai-process"}) is False
 
+def test_ocr_step_triggers_on_modular_ocr_tag():
+    step = OCRStep(CONFIG)
+    assert step.can_handle({"ai-ocr"}) is True
+
 
 # --- OCRFixStep ---
 
@@ -49,6 +55,14 @@ def test_ocr_fix_step_triggers_when_ocr_will_run():
     """OCRFixStep should also run when force_ocr_tag is present (piggybacks on OCR pass)."""
     step = OCRFixStep(CONFIG)
     assert step.can_handle({"force_ocr"}) is True
+
+def test_ocr_fix_step_triggers_on_modular_fix_tag():
+    step = OCRFixStep(CONFIG)
+    assert step.can_handle({"ai-ocr-fix"}) is True
+
+def test_ocr_fix_step_ignores_ai_process():
+    step = OCRFixStep(CONFIG)
+    assert step.can_handle({"ai-process"}) is False
 
 
 # --- Classification steps: must trigger on ai-process ---
@@ -112,4 +126,3 @@ def test_fields_step_triggers_on_specific_tag():
 def test_fields_step_ignores_unrelated_tag():
     step = FieldsStep(CONFIG)
     assert step.can_handle({"something-else"}) is False
-

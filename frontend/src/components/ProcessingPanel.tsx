@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
-import { documentsApi, schedulerApi } from '../api/client'
-import { SchedulerStatus } from '../api/types'
 import { Play, RefreshCw, FileText, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { configApi, documentsApi, schedulerApi } from '../api/client'
+import { SchedulerStatus } from '../api/types'
+import {
+  getCachedDocumentList,
+  invalidateDocumentListCache,
+  loadCachedDocumentList,
+  setCachedDocumentList,
+} from '../utils/documentListCache'
+import { buildPaperlessDocumentUrl } from '../utils/paperlessLinks'
 
 interface TaggedDocument {
   id: number
@@ -11,6 +19,13 @@ interface TaggedDocument {
   created: string
   added: string
   tags: number[]
+  paperless_url?: string | null
+}
+
+type DocumentListRefreshMode = 'automatic' | 'manual'
+
+export function clearProcessingDocumentCacheForTests() {
+  invalidateDocumentListCache('processing')
 }
 
 interface ProcessingStep {
@@ -46,6 +61,14 @@ interface ProcessingResult {
   error?: string
 }
 
+interface TriggerProcessingResult {
+  processed: number
+  results?: Array<{
+    success?: boolean
+    document_id?: number
+  }>
+}
+
 export default function ProcessingPanel() {
   const { t } = useTranslation()
   const [documents, setDocuments] = useState<TaggedDocument[]>([])
@@ -56,25 +79,39 @@ export default function ProcessingPanel() {
   const [result, setResult] = useState<ProcessingResult | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus | null>(null)
+  const [paperlessUrl, setPaperlessUrl] = useState<string | null>(null)
   const [resultStepFilter, setResultStepFilter] = useState<'all' | 'failed' | 'completed'>('all')
+  const [refreshMode, setRefreshMode] = useState<DocumentListRefreshMode>('automatic')
+  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(
+    getCachedDocumentList<TaggedDocument>('processing') !== null,
+  )
 
-  useEffect(() => {
-    loadDocuments()
-    loadSchedulerStatus()
-
-    const interval = setInterval(loadSchedulerStatus, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async (options: { force?: boolean } = {}) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await documentsApi.getTagged()
-      setDocuments(res.data.documents || [])
-      if (res.data.error) {
-        setError(res.data.error)
+      const loadedDocuments = await loadCachedDocumentList<TaggedDocument>(
+        'processing',
+        async () => {
+          const res = await documentsApi.getTagged()
+          if (res.data.error) {
+            setError(res.data.error)
+          }
+          const responsePaperlessUrl = res.data.paperless_url || null
+          setPaperlessUrl(responsePaperlessUrl)
+          return (res.data.documents || []).map((doc: TaggedDocument) => ({
+            ...doc,
+            paperless_url: responsePaperlessUrl,
+          }))
+        },
+        options,
+      )
+      const cachedPaperlessUrl = loadedDocuments.find((doc) => doc.paperless_url)?.paperless_url
+      if (cachedPaperlessUrl) {
+        setPaperlessUrl(cachedPaperlessUrl)
       }
+      setDocuments(loadedDocuments)
+      setHasLoadedDocuments(true)
     } catch (err: unknown) {
       const message = err instanceof Error && 'response' in err
         ? (err as { response?: { data?: { detail?: string; status?: number } } }).response?.data?.detail || (err instanceof Error ? err.message : 'Unknown error')
@@ -84,7 +121,7 @@ export default function ProcessingPanel() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const loadSchedulerStatus = async () => {
     try {
@@ -95,12 +132,65 @@ export default function ProcessingPanel() {
     }
   }
 
+  useEffect(() => {
+    let mounted = true
+
+    const loadRefreshMode = async () => {
+      let mode: DocumentListRefreshMode = 'automatic'
+      try {
+        const res = await configApi.get('document_list_refresh_mode')
+        mode = res.data.value === 'manual' ? 'manual' : 'automatic'
+      } catch {
+        mode = 'automatic'
+      }
+
+      if (!mounted) return
+
+      setRefreshMode(mode)
+      const cached = getCachedDocumentList<TaggedDocument>('processing')
+      if (cached !== null) {
+        setDocuments(cached)
+        const cachedPaperlessUrl = cached.find((doc) => doc.paperless_url)?.paperless_url
+        if (cachedPaperlessUrl) {
+          setPaperlessUrl(cachedPaperlessUrl)
+        }
+        setHasLoadedDocuments(true)
+      }
+      if (mode === 'automatic') {
+        loadDocuments()
+      }
+    }
+
+    loadRefreshMode()
+    loadSchedulerStatus()
+
+    const interval = setInterval(loadSchedulerStatus, 2000)
+    return () => {
+      mounted = false
+      clearInterval(interval)
+    }
+  }, [loadDocuments])
+
   const handleProcessAll = async () => {
     setProcessing(true)
     try {
       const res = await documentsApi.trigger()
-      toast.success(t('processing.processedCount', { count: res.data.processed }))
-      loadDocuments()
+      const data = res.data as TriggerProcessingResult
+      toast.success(t('processing.processedCount', { count: data.processed }))
+      const processedIds = new Set(
+        (data.results || [])
+          .filter((item) => item.success && typeof item.document_id === 'number')
+          .map((item) => item.document_id as number),
+      )
+      if (processedIds.size > 0) {
+        setDocuments((currentDocuments) => {
+          const nextDocuments = currentDocuments.filter((doc) => !processedIds.has(doc.id))
+          setCachedDocumentList('processing', nextDocuments)
+          return nextDocuments
+        })
+      } else if (data.processed > 0) {
+        invalidateDocumentListCache('processing')
+      }
       loadSchedulerStatus()
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { detail?: string } } }
@@ -122,7 +212,7 @@ export default function ProcessingPanel() {
       const res = await documentsApi.process(docId)
       setResult(res.data)
       setShowResult(true)
-      loadDocuments()
+      loadDocuments({ force: true })
       loadSchedulerStatus()
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string } } }
@@ -150,6 +240,10 @@ export default function ProcessingPanel() {
   }
 
   const isCurrentlyProcessing = schedulerStatus?.is_processing || processing
+  const currentDocumentUrl = buildPaperlessDocumentUrl(
+    schedulerStatus?.paperless_url || paperlessUrl,
+    schedulerStatus?.current_doc_id,
+  )
   const filteredSteps =
     resultStepFilter === 'all'
       ? result?.steps || []
@@ -165,9 +259,20 @@ export default function ProcessingPanel() {
               {t('processing.processingInProgress')}
             </span>
             {schedulerStatus?.current_doc_id && (
-              <span className="text-blue-600 text-sm ml-2">
-                {t('processing.currentDoc', { id: schedulerStatus.current_doc_id })}
-              </span>
+              currentDocumentUrl ? (
+                <a
+                  href={currentDocumentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-blue-600 text-sm ml-2 underline"
+                >
+                  {t('processing.currentDoc', { id: schedulerStatus.current_doc_id })}
+                </a>
+              ) : (
+                <span className="text-blue-600 text-sm ml-2">
+                  {t('processing.currentDoc', { id: schedulerStatus.current_doc_id })}
+                </span>
+              )
             )}
           </div>
         </div>
@@ -196,7 +301,7 @@ export default function ProcessingPanel() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={loadDocuments}
+            onClick={() => loadDocuments({ force: true })}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50"
           >
@@ -362,6 +467,11 @@ export default function ProcessingPanel() {
 
       {loading ? (
         <div className="text-center py-8 text-gray-500">{t('common.loading')}</div>
+      ) : refreshMode === 'manual' && !hasLoadedDocuments ? (
+        <div className="bg-white rounded-lg border border-gray-200 text-center py-10 px-4 text-gray-500">
+          <p className="font-medium text-gray-700 mb-1">{t('processing.manualRefreshTitle')}</p>
+          <p className="text-sm">{t('processing.manualRefreshHint')}</p>
+        </div>
       ) : documents.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 text-center py-10 px-4 text-gray-500">
           <p className="font-medium text-gray-700 mb-1">{t('processing.noDocuments')}</p>
@@ -387,41 +497,60 @@ export default function ProcessingPanel() {
               </tr>
             </thead>
             <tbody>
-              {documents.map((doc) => (
-                <tr key={doc.id} className="border-t hover:bg-gray-50">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <FileText size={18} className="text-gray-400" />
-                      <span className="font-medium">
-                        {doc.title || t('processing.docFallback', { id: doc.id })}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-gray-600">#{doc.id}</td>
-                  <td className="py-3 px-4 text-gray-600">
-                    {new Date(doc.created).toLocaleDateString()}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <button
-                      onClick={() => handleProcessOne(doc.id)}
-                      disabled={processingId !== null || isCurrentlyProcessing}
-                      className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {processingId === doc.id ? (
-                        <>
-                          <RefreshCw size={14} className="animate-spin" />
-                          {t('processing.processingBtn')}
-                        </>
-                      ) : (
-                        <>
-                          <Play size={14} />
-                          {t('processing.processBtn')}
-                        </>
-                      )}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {documents.map((doc) => {
+                const documentUrl = buildPaperlessDocumentUrl(
+                  doc.paperless_url || paperlessUrl,
+                  doc.id,
+                )
+
+                return (
+                  <tr key={doc.id} className="border-t hover:bg-gray-50">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <FileText size={18} className="text-gray-400" />
+                        {documentUrl ? (
+                          <a
+                            href={documentUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-blue-700 hover:underline"
+                          >
+                            {doc.title || t('processing.docFallback', { id: doc.id })}
+                            <span className="ml-2 text-xs text-gray-500">#{doc.id}</span>
+                          </a>
+                        ) : (
+                          <span className="font-medium">
+                            {doc.title || t('processing.docFallback', { id: doc.id })}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-gray-600">#{doc.id}</td>
+                    <td className="py-3 px-4 text-gray-600">
+                      {new Date(doc.created).toLocaleDateString()}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <button
+                        onClick={() => handleProcessOne(doc.id)}
+                        disabled={processingId !== null || isCurrentlyProcessing}
+                        className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {processingId === doc.id ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" />
+                            {t('processing.processingBtn')}
+                          </>
+                        ) : (
+                          <>
+                            <Play size={14} />
+                            {t('processing.processBtn')}
+                          </>
+                        )}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

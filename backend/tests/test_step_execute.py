@@ -8,14 +8,122 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 # Imports for tasks
+from app.services.steps.ocr_step import OCRStep
 from app.services.steps.title_step import TitleStep
 from app.services.steps.correspondent_step import CorrespondentStep
 from app.services.steps.document_type_step import DocumentTypeStep
 from app.services.steps.tags_step import TagsStep
 from app.services.steps.fields_step import FieldsStep
 from app.services.processor import DocumentProcessor
-from app.services.steps.base import StepContext
+from app.services.steps.base import StepContext, StepResult
 from app.models import Prompt
+
+
+class TestOCRStep:
+    @pytest.fixture
+    def ctx(self, mock_paperless, mock_llm):
+        return StepContext(
+            doc_id=1,
+            paperless=mock_paperless,
+            llm=mock_llm,
+            config={
+                "enable_vision": "false",
+                "modular_tag_process": "ai-process",
+                "modular_tag_ocr": "ai-ocr",
+                "force_ocr_tag": "force_ocr",
+            },
+            trigger_tags={"ai-process"},
+            ocr_text="Existing OCR text.",
+        )
+
+    @pytest.mark.asyncio
+    async def test_ai_process_does_not_run_vision_ocr_when_enabled(
+        self, ctx, mock_paperless
+    ):
+        """ai-process alone must not call Vision OCR even when Vision is configured."""
+        ctx.config["enable_vision"] = "true"
+        step = await OCRStep.from_config(ctx.config)
+
+        assert step.can_handle(ctx.trigger_tags) is False
+
+        mock_paperless.get_document_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_modular_ocr_tag_runs_vision_ocr_when_enabled(
+        self, ctx, mock_paperless
+    ):
+        """ai-ocr fetches the PDF and calls Vision OCR."""
+        ctx.config["enable_vision"] = "true"
+        ctx.trigger_tags = {"ai-ocr"}
+        vision_pipeline = AsyncMock()
+        vision_pipeline.extract_text_from_pdf = AsyncMock(
+            return_value={"text": "Vision OCR text", "raw": ""}
+        )
+
+        with (
+            patch("app.services.steps.ocr_step.VisionPipeline.create") as create_pipeline,
+            patch("app.database.get_async_session") as mock_get_session,
+        ):
+            create_pipeline.return_value = vision_pipeline
+            mock_session = AsyncMock()
+            mock_session.exec = AsyncMock(
+                return_value=MagicMock(first=MagicMock(return_value=None))
+            )
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            step = await OCRStep.from_config(ctx.config)
+            result = await step.execute(ctx)
+
+        mock_paperless.get_document_file.assert_awaited_once_with(1)
+        vision_pipeline.extract_text_from_pdf.assert_awaited_once_with(
+            b"fake pdf bytes", prompt=None
+        )
+        assert result.data == {"text": "Vision OCR text"}
+        assert result.error is None
+        assert ctx.ocr_text == "Vision OCR text"
+
+    @pytest.mark.asyncio
+    async def test_uses_active_vision_ocr_prompt(self, ctx):
+        """OCRStep passes the active vision_ocr system prompt to Vision OCR."""
+        ctx.config["enable_vision"] = "true"
+        ctx.trigger_tags = {"ai-ocr"}
+        vision_pipeline = AsyncMock()
+        vision_pipeline.extract_text_from_pdf = AsyncMock(
+            return_value={"text": "Prompted OCR text", "raw": ""}
+        )
+        mock_prompt = MagicMock(spec=Prompt)
+        mock_prompt.system_prompt = "Read every page carefully."
+
+        with (
+            patch("app.services.steps.ocr_step.VisionPipeline.create") as create_pipeline,
+            patch("app.database.get_async_session") as mock_get_session,
+        ):
+            create_pipeline.return_value = vision_pipeline
+            mock_session = AsyncMock()
+            mock_session.exec = AsyncMock(
+                return_value=MagicMock(first=MagicMock(return_value=mock_prompt))
+            )
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+
+            step = await OCRStep.from_config(ctx.config)
+            await step.execute(ctx)
+
+        vision_pipeline.extract_text_from_pdf.assert_awaited_once_with(
+            b"fake pdf bytes", prompt="Read every page carefully."
+        )
+
+    def test_modular_ocr_fix_tag_does_not_trigger_vision_ocr(self, ctx):
+        """ai-ocr-fix is handled by OCRFixStep, not by OCRStep."""
+        step = OCRStep(ctx.config)
+
+        assert step.can_handle({"ai-ocr-fix"}) is False
+
+    def test_combined_ai_ocr_and_ai_process_allows_ocr_step(self, ctx):
+        """Combining ai-ocr with ai-process lets OCR run before normal processing."""
+        ctx.trigger_tags = {"ai-ocr", "ai-process"}
+        step = OCRStep(ctx.config)
+
+        assert step.can_handle(ctx.trigger_tags) is True
 
 
 @patch("app.database.get_async_session")
@@ -350,6 +458,44 @@ class TestTagsStep:
         assert 10 not in result.data.get("tags", [])
 
     @pytest.mark.asyncio
+    async def test_none_blacklist_allows_valid_tags(self, mock_get_session, ctx, mock_llm):
+        """TagsStep treats a None tag_blacklist config value as empty."""
+        self._setup_db(mock_get_session)
+        ctx.config["tag_blacklist"] = None
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": "Amazon, inbox",
+                "raw": "",
+            }
+        )
+
+        step = await TagsStep.from_config(ctx.config)
+        result = await step.execute(ctx)
+
+        assert set(result.data["tags"]) == {1, 6}
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_missing_blacklist_allows_valid_tags(
+        self, mock_get_session, ctx, mock_llm
+    ):
+        """TagsStep treats a missing tag_blacklist config value as empty."""
+        self._setup_db(mock_get_session)
+        ctx.config.pop("tag_blacklist")
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": "Amazon, inbox",
+                "raw": "",
+            }
+        )
+
+        step = await TagsStep.from_config(ctx.config)
+        result = await step.execute(ctx)
+
+        assert set(result.data["tags"]) == {1, 6}
+        assert result.error is None
+
+    @pytest.mark.asyncio
     async def test_unknown_tag_names_skipped(self, mock_get_session, ctx, mock_llm):
         """TagsStep silently skips tag names not found in Paperless."""
         self._setup_db(mock_get_session)
@@ -595,6 +741,104 @@ class TestResolveProposedChanges:
             {"id": 1, "name": "Invoice Number", "value": "INV-123"},
             {"id": 2, "name": "Amount", "value": "$500"},
         ]
+
+
+class TestDocumentProcessorFailureHandling:
+    @pytest.mark.asyncio
+    async def test_failed_step_result_skips_finalization_and_logs_failure(
+        self, mock_paperless, mock_llm
+    ):
+        """A step returning an error must leave trigger tags untouched for retry."""
+        mock_llm.provider = "test-provider"
+        mock_llm.model = "test-model"
+
+        failed_step = MagicMock()
+        failed_step.name = "title"
+        failed_step.can_handle.return_value = True
+        failed_step.execute = AsyncMock(return_value=StepResult(error="timeout"))
+        failed_step.update_metadata = AsyncMock()
+
+        successful_step = MagicMock()
+        successful_step.name = "correspondent"
+        successful_step.can_handle.return_value = True
+        successful_step.execute = AsyncMock(
+            return_value=StepResult(data={"correspondent": 1})
+        )
+        successful_step.update_metadata = AsyncMock()
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._build_steps = AsyncMock(return_value=[failed_step, successful_step])
+        processor._get_config_dict = AsyncMock(
+            return_value={
+                "modular_tag_process": "ai-process",
+                "modular_tag_title": "ai-title",
+                "modular_tag_correspondent": "ai-correspondent",
+            }
+        )
+        processor._get_config = AsyncMock(
+            side_effect=lambda key, default=None: {
+                "process_tag": "ai-process",
+                "processed_tag": "ai-processed",
+            }.get(key, default)
+        )
+        processor._log_processing = AsyncMock(return_value=123)
+        processor._apply_metadata_update = AsyncMock()
+        processor._apply_tag_updates = AsyncMock()
+
+        with patch(
+            "app.services.processor.LLMHandlerManager.get_handler",
+            AsyncMock(return_value=mock_llm),
+        ):
+            result = await processor.process_document(1)
+
+        assert result["success"] is False
+        assert "timeout" in result["error"]
+        assert result["steps"][0]["status"] == "failed"
+        assert result["steps"][0]["error"] == "timeout"
+        successful_step.execute.assert_not_awaited()
+
+        processor._apply_metadata_update.assert_not_awaited()
+        processor._apply_tag_updates.assert_not_awaited()
+        mock_paperless.update_document.assert_not_awaited()
+
+        failed_log_call = processor._log_processing.await_args_list[-1].kwargs
+        assert failed_log_call["status"] == "failed"
+        assert "timeout" in failed_log_call["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_process_tagged_documents_counts_only_successful_results(
+        self, mock_paperless
+    ):
+        """Batch counts must not treat failed processing results as processed."""
+        mock_paperless.get_tags = AsyncMock(
+            return_value=[{"id": 5, "name": "ai-process"}]
+        )
+        mock_paperless.list_documents = AsyncMock(
+            return_value=[
+                {"id": 1, "title": "Ok", "tags": [5]},
+                {"id": 2, "title": "Failed", "tags": [5]},
+            ]
+        )
+        mock_paperless.reset_metrics = MagicMock()
+        mock_paperless.get_metrics = MagicMock(
+            return_value={"requests": 1, "paged_requests": 1}
+        )
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._get_config = AsyncMock(return_value="ai-process")
+        processor.process_document = AsyncMock(
+            side_effect=[
+                {"success": True, "document_id": 1},
+                {"success": False, "document_id": 2, "error": "timeout"},
+            ]
+        )
+
+        result = await processor.process_tagged_documents()
+
+        assert result["success"] is False
+        assert result["processed"] == 1
+        assert result["failed"] == 1
+        assert [item["document_id"] for item in result["results"]] == [1, 2]
 
 
 class TestProcessorTagMerge:

@@ -37,6 +37,7 @@ from .llm_handler import LLMHandlerManager
 from ..exceptions import LLMUnavailableError
 from ..constants import CONTENT_TRUNCATION_LIMIT, TITLE_MAX_LENGTH
 from .vision import VisionPipeline
+from .config_cache import ConfigCache
 
 _in_flight_docs: set[int] = set()
 _in_flight_lock = asyncio.Lock()
@@ -110,11 +111,8 @@ class DocumentProcessor:
 
     @staticmethod
     async def _get_config(key: str, default: Optional[str] = None) -> Optional[str]:
-        async with get_async_session() as session:
-            stmt = select(Config).where(Config.key == key)
-            config = await session.exec(stmt)
-            config = config.first()
-            return config.value if config else default
+        cache = await ConfigCache.get_instance()
+        return await cache.get(key, default or "")
 
     @staticmethod
     async def _get_all_prompts() -> list[dict]:
@@ -551,6 +549,7 @@ Available Custom Fields: [{custom_fields_list}]"""
                             step_instance.name, "failed", duration_ms, result.error
                         )
                         logger.info(f"    ✗ {step_instance.name} failed: {result.error}")
+                        break
                     elif result.data:
                         add_step(step_instance.name, "completed", duration_ms)
                         logger.info(f"    ✓ {step_instance.name} completed ({duration_ms}ms)")
@@ -568,11 +567,47 @@ Available Custom Fields: [{custom_fields_list}]"""
                     logger.warning(
                         f"Step {step_instance.name} failed for doc {doc_id}: {step_error}"
                     )
+                    break
 
         except LLMUnavailableError as e:
             await self._delete_log(log_id)
             logger.warning(f"LLM unavailable for doc {doc_id}, will retry: {e}")
             return {"success": False, "error": str(e), "retryable": True}
+
+        failed_steps = [step for step in step_records if step["status"] == "failed"]
+        if failed_steps:
+            error_detail = "; ".join(
+                f"{step['name']}: {step.get('error') or 'unknown error'}"
+                for step in failed_steps
+            )
+            processing_time_ms = int((time.time() - start_time) * 1000)
+            logger.info(
+                "  ✗ Document %s processing FAILED after %sms: %s",
+                doc_id,
+                processing_time_ms,
+                error_detail,
+            )
+            await self._log_processing(
+                doc_id=doc_id,
+                doc_title=doc.get("title"),
+                status="failed",
+                provider=llm.provider,
+                model=llm.model,
+                llm_response=json.dumps({"steps": step_records}),
+                error_message=f"AI processing failed: {error_detail}",
+                processing_time_ms=processing_time_ms,
+                log_id=log_id,
+            )
+            return {
+                "success": False,
+                "document_id": doc_id,
+                "title": doc.get("title"),
+                "updates": {},
+                "processing_time_ms": processing_time_ms,
+                "steps": step_records,
+                "proposed_changes": {},
+                "error": f"AI processing failed: {error_detail}",
+            }
 
         has_classification = any(
             k in accumulated_update
@@ -790,11 +825,8 @@ Available Custom Fields: [{custom_fields_list}]"""
             "fields": "modular_tag_fields",
             "process": "modular_tag_process",
         }
-        async with get_async_session() as session:
-            stmt = select(Config)
-            configs = await session.exec(stmt)
-            configs = configs.all()
-            config_dict = {c.key: c.value for c in configs}
+        cache = await ConfigCache.get_instance()
+        config_dict = await cache.get_all()
         result = {}
         for step_id, config_key in step_to_config.items():
             tag_name = config_dict.get(config_key) or MODULAR_TAG_DEFAULTS.get(
@@ -805,6 +837,8 @@ Available Custom Fields: [{custom_fields_list}]"""
         return result
 
     async def process_tagged_documents(self) -> dict[str, Any]:
+        self.paperless.reset_metrics()
+        started = time.perf_counter()
         process_tag_name = await self._get_config("process_tag")
 
         if not process_tag_name:
@@ -831,8 +865,20 @@ Available Custom Fields: [{custom_fields_list}]"""
             result = await self.process_document(doc["id"])
             results.append(result)
 
+        processed = sum(1 for result in results if result.get("success") is True)
+        failed = len(results) - processed
+        metrics = self.paperless.get_metrics()
+        logger.debug(
+            "Legacy process-tag run: processed=%d, requests=%d (paged=%d), duration=%.2fs",
+            processed,
+            metrics["requests"],
+            metrics["paged_requests"],
+            time.perf_counter() - started,
+        )
+
         return {
-            "success": True,
-            "processed": len(results),
+            "success": failed == 0,
+            "processed": processed,
+            "failed": failed,
             "results": results,
         }

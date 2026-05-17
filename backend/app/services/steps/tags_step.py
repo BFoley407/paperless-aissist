@@ -84,7 +84,7 @@ class TagsStep(AbstractStep):
             tag_text = result.get("text", "").strip() or result.get("raw", "").strip()
 
             if tag_text and tag_text.lower() != "none":
-                blacklist_raw = await self._get_config(self.config, "tag_blacklist", "")
+                blacklist_raw = await self._get_config(self.config, "tag_blacklist", "") or ""
                 blacklist = [
                     t.strip().lower() for t in blacklist_raw.split(",") if t.strip()
                 ]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { documentsApi } from '../api/client'
 import { Server, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
@@ -31,18 +31,21 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
     tags: [],
     correspondents: [],
   })
+  const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null)
+  const hasPaperlessToken = secretsSet?.includes('paperless_token') ?? false
 
   const handleTest = useCallback(async () => {
     setTesting(true)
     setStatus((prev) => ({ ...prev, error: null }))
     try {
-      const res = await documentsApi.getTags()
+      const res = await documentsApi.getTags(true)
       setStatus({
         connected: true,
         error: null,
         tags: res.data.tags || [],
         correspondents: res.data.correspondents || [],
       })
+      setLastLoadedAt(new Date().toLocaleString())
     } catch (error: unknown) {
       const errorMsg =
         error instanceof Error && 'response' in error
@@ -63,14 +66,6 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
       setTesting(false)
     }
   }, [t])
-
-  useEffect(() => {
-    if (config.paperless_url && config.paperless_token && status.tags.length === 0) {
-      handleTest()
-    }
-  }, [config.paperless_url, config.paperless_token, handleTest])
-
-  const hasPaperlessToken = secretsSet?.includes('paperless_token') ?? false
 
   const handleChange = async (key: string, value: string) => {
     await onSave(key, value)
@@ -110,7 +105,11 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
             type="password"
             value={config.paperless_token || ''}
             onChange={(e) => handleChange('paperless_token', e.target.value)}
-            placeholder={hasPaperlessToken ? t('config.alreadySetPlaceholder') : t('config.apiTokenPlaceholder')}
+            placeholder={
+              hasPaperlessToken
+                ? t('config.alreadySetPlaceholder')
+                : t('config.apiTokenPlaceholder')
+            }
             className={fieldClass}
           />
         </div>
@@ -128,12 +127,19 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
       </div>
 
       {status.connected && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 rounded-lg text-sm">
-          <CheckCircle size={16} />
-          {t('config.connectedBadge', {
-            tags: status.tags.length,
-            correspondents: status.correspondents.length,
-          })}
+        <div className="space-y-1 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
+          <div className="flex items-center gap-2">
+            <CheckCircle size={16} />
+            {t('config.connectedBadge', {
+              tags: status.tags.length,
+              correspondents: status.correspondents.length,
+            })}
+          </div>
+          {lastLoadedAt && (
+            <div className="pl-6 text-xs text-green-800">
+              {t('config.lastLoaded', { time: lastLoadedAt })}
+            </div>
+          )}
         </div>
       )}
 
@@ -145,8 +151,10 @@ export function ConfigSectionPaperless({ config, onSave, secretsSet }: ConfigSec
       )}
 
       <div className="border-t pt-4 space-y-4">
-        {!status.connected && status.tags.length === 0 && (
-          <p className="text-xs text-gray-400 italic">{t('config.notConnectedHint')}</p>
+        {!lastLoadedAt && status.tags.length === 0 && (
+          <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+            {t('config.notConnectedHint')}
+          </p>
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

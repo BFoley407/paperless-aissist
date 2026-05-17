@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { schedulerApi } from '../api/client'
 import { Clock, Play, Square, RefreshCw, CheckCircle, XCircle } from 'lucide-react'
 import { SchedulerStatus } from '../api/types'
+import { buildPaperlessDocumentUrl } from '../utils/paperlessLinks'
 
 interface SchedulerConfigSectionProps {
   config: Record<string, string>
@@ -11,7 +12,7 @@ interface SchedulerConfigSectionProps {
 }
 
 export function ConfigSectionScheduler({
-  config: _config,
+  config,
   onSave: _onSave,
 }: SchedulerConfigSectionProps) {
   const { t } = useTranslation()
@@ -20,6 +21,10 @@ export function ConfigSectionScheduler({
   const [schedulerLoading, setSchedulerLoading] = useState(false)
 
   const label = 'block text-sm font-medium text-gray-700 mb-1'
+  const currentDocumentUrl = buildPaperlessDocumentUrl(
+    config.paperless_url || schedulerStatus?.paperless_url,
+    schedulerStatus?.current_doc_id,
+  )
 
   const loadSchedulerStatus = useCallback(async () => {
     try {
@@ -143,7 +148,18 @@ export function ConfigSectionScheduler({
 
       {schedulerStatus?.is_processing && schedulerStatus.current_doc_id && (
         <div className="text-sm text-blue-600">
-          {t('config.schedulerCurrentDoc', { id: schedulerStatus.current_doc_id })}
+          {currentDocumentUrl ? (
+            <a
+              href={currentDocumentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              {t('config.schedulerCurrentDoc', { id: schedulerStatus.current_doc_id })}
+            </a>
+          ) : (
+            t('config.schedulerCurrentDoc', { id: schedulerStatus.current_doc_id })
+          )}
         </div>
       )}
 

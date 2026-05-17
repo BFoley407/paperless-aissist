@@ -1,5 +1,7 @@
 """Document processing endpoints: trigger, chat, tag listing, and preview."""
 
+import logging
+import time
 from fastapi import APIRouter, HTTPException, Body, Query
 from pydantic import BaseModel
 from starlette.requests import Request
@@ -19,6 +21,7 @@ from ..services.scheduler import (
 from ..constants import CHAT_CONTENT_LIMIT, CHAT_HISTORY_LIMIT
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+logger = logging.getLogger(__name__)
 
 
 class ProcessRequest(BaseModel):
@@ -101,9 +104,11 @@ async def trigger_processing():
     try:
         legacy = await process_tagged_with_state()
         modular = await process_modular_with_state()
+        failed = legacy.get("failed", 0) + modular.get("failed", 0)
         return {
-            "success": True,
+            "success": failed == 0,
             "processed": legacy.get("processed", 0) + modular.get("processed", 0),
+            "failed": failed,
             "results": legacy.get("results", []) + modular.get("results", []),
         }
     except Exception as e:
@@ -113,12 +118,12 @@ async def trigger_processing():
 
 
 @router.get("/test-connection")
-async def test_paperless_connection():
+async def test_paperless_connection(refresh: bool = Query(False)):
     try:
         paperless = await PaperlessClientManager.get_client()
-        tags = await paperless.get_tags()
-        correspondents = await paperless.get_correspondents()
-        document_types = await paperless.get_document_types()
+        tags = await paperless.get_tags(force_refresh=refresh)
+        correspondents = await paperless.get_correspondents(force_refresh=refresh)
+        document_types = await paperless.get_document_types(force_refresh=refresh)
 
         return {
             "success": True,
@@ -135,7 +140,7 @@ async def test_paperless_connection():
 
 
 @router.get("/tags")
-async def get_paperless_tags():
+async def get_paperless_tags(refresh: bool = Query(False)):
     """Return all Paperless tags, correspondents, and document types."""
     try:
         paperless = await PaperlessClientManager.get_client()
@@ -143,9 +148,9 @@ async def get_paperless_tags():
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        tags = await paperless.get_tags()
-        correspondents = await paperless.get_correspondents()
-        document_types = await paperless.get_document_types()
+        tags = await paperless.get_tags(force_refresh=refresh)
+        correspondents = await paperless.get_correspondents(force_refresh=refresh)
+        document_types = await paperless.get_document_types(force_refresh=refresh)
 
         return {
             "tags": [{"id": t["id"], "name": t["name"]} for t in tags],
@@ -181,26 +186,46 @@ async def get_tagged_documents():
         return {"documents": [], "error": f"Paperless config error: {str(e)}"}
 
     try:
+        started = time.perf_counter()
+        paperless.reset_metrics()
+        paperless_url = getattr(paperless, "base_url", None)
         tags = await paperless.get_tags()
         tags_by_name = {t["name"]: t["id"] for t in tags}
-
-        merged: dict[int, dict] = {}
-
-        # Fetch docs tagged with process_tag
+        trigger_tag_ids: set[int] = set()
         process_tag_id = None
         if process_tag_name:
             process_tag_id = tags_by_name.get(process_tag_name)
             if process_tag_id:
-                for doc in await paperless.list_documents(tags=[process_tag_id]):
-                    merged[doc["id"]] = doc
+                trigger_tag_ids.add(process_tag_id)
 
-        # Fetch docs tagged with any modular trigger tag
+        # Resolve modular trigger tag IDs
         modular_tag_map = await DocumentProcessor._get_modular_tag_map()
         for tag_name in modular_tag_map.values():
             tag_id = tags_by_name.get(tag_name)
             if tag_id:
-                for doc in await paperless.list_documents(tags=[tag_id]):
-                    merged[doc["id"]] = doc
+                trigger_tag_ids.add(tag_id)
+
+        if not trigger_tag_ids:
+            return {
+                "documents": [],
+                "process_tag": process_tag_name,
+                "process_tag_id": process_tag_id,
+                "paperless_url": paperless_url if isinstance(paperless_url, str) else None,
+            }
+
+        merged: dict[int, dict] = {}
+        for doc in await paperless.list_documents(tags_any=sorted(trigger_tag_ids)):
+            merged[doc["id"]] = doc
+
+        metrics = paperless.get_metrics()
+        logger.debug(
+            "Tagged documents query: %d docs matched, %d trigger tags, %d requests (%d paged), %.2fs",
+            len(merged),
+            len(trigger_tag_ids),
+            metrics["requests"],
+            metrics["paged_requests"],
+            time.perf_counter() - started,
+        )
 
         documents = [
             {
@@ -217,6 +242,7 @@ async def get_tagged_documents():
             "documents": documents,
             "process_tag": process_tag_name,
             "process_tag_id": process_tag_id,
+            "paperless_url": paperless_url if isinstance(paperless_url, str) else None,
         }
     except Exception as e:
         return {"documents": [], "error": str(e)}
