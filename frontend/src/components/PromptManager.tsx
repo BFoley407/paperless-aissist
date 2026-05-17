@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { promptsApi, configApi } from '../api/client'
 import { Plus, Pencil, Trash2, X, RefreshCw } from 'lucide-react'
+import { MODULAR_TAG_DEFAULTS } from '../constants'
 
 const PROMPT_TYPE_TO_CONFIG_KEY: Record<string, string | undefined> = {
   title: 'modular_tag_title',
@@ -12,10 +13,9 @@ const PROMPT_TYPE_TO_CONFIG_KEY: Record<string, string | undefined> = {
   type_specific: 'modular_tag_fields',
   vision_ocr: 'modular_tag_ocr',
   ocr_fix: 'modular_tag_ocr_fix',
+  date: 'modular_tag_date',
   classify: 'modular_tag_process',
 }
-
-import { MODULAR_TAG_DEFAULTS } from '../constants'
 
 export function getTriggerTag(promptType: string, config: Record<string, string>): string | null {
   const configKey = PROMPT_TYPE_TO_CONFIG_KEY[promptType]

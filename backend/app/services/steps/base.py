@@ -21,10 +21,14 @@ class StepResult:
     Attributes:
         data: Dict of proposed changes (title, tags, custom_fields, etc.).
         error: Error message string if the step failed, None on success.
+        details: Diagnostic details for processing logs.
+        skipped: True when the step made a deliberate no-op decision.
     """
 
     data: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+    skipped: bool = False
 
 
 @dataclass

@@ -41,6 +41,7 @@ interface RecentLog {
   status: string
   llm_provider: string | null
   llm_model: string | null
+  llm_response?: string | null
   error_message: string | null
   processing_time_ms: number | null
   processed_at: string
@@ -115,6 +116,36 @@ export default function Dashboard() {
 
   const filteredLogs =
     logFilter === 'all' ? recentLogs : recentLogs.filter((log) => log.status === logFilter)
+
+  const getDateStepDetails = (llmResponse?: string | null): string | null => {
+    if (!llmResponse) return null
+    try {
+      const parsed = JSON.parse(llmResponse) as {
+        steps?: Array<{
+          name?: string
+          details?: {
+            created_date?: string | null
+            confidence?: string
+            evidence?: string
+            reason?: string
+          }
+        }>
+      }
+      const dateStep = parsed.steps?.find((step) => step.name === 'date' && step.details)
+      if (!dateStep?.details) return null
+
+      const details = dateStep.details
+      const parts: string[] = []
+      if (details.created_date) parts.push(`created_date: ${details.created_date}`)
+      if (details.confidence) parts.push(`confidence: ${details.confidence}`)
+      if (details.reason) parts.push(`reason: ${details.reason}`)
+      if (details.evidence) parts.push(`evidence: ${details.evidence}`)
+
+      return parts.length > 0 ? parts.join(' · ') : null
+    } catch {
+      return null
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -314,6 +345,14 @@ export default function Dashboard() {
                           title={log.error_message}
                         >
                           {log.error_message}
+                        </p>
+                      )}
+                      {getDateStepDetails(log.llm_response) && (
+                        <p
+                          className="mt-1 text-xs text-gray-600 max-w-sm truncate"
+                          title={getDateStepDetails(log.llm_response) || undefined}
+                        >
+                          {getDateStepDetails(log.llm_response)}
                         </p>
                       )}
                     </td>

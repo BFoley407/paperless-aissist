@@ -72,6 +72,7 @@ async def get_prompt_templates():
                 "description": "List of available custom fields",
             },
             {"name": "{title}", "description": "Original document title"},
+            {"name": "{created_date}", "description": "Current document date"},
         ],
         "types": [
             {"value": "correspondent", "description": "Correspondent detection"},
@@ -81,6 +82,7 @@ async def get_prompt_templates():
                 "value": "ocr_fix",
                 "description": "OCR post-processing (fix recognition errors)",
             },
+            {"value": "date", "description": "Document date detection"},
             {
                 "value": "classify",
                 "description": "Document classification (legacy combined)",

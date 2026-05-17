@@ -11,6 +11,7 @@ Tag a document with `ai-process` and it gets automatically classified, titled, t
 - **Custom field extraction** — pulls structured data into Paperless custom fields
 - **Vision OCR** — uses vision models (Ollama, OpenAI, Grok) to read documents directly from page images
 - **OCR post-processing** — LLM corrects OCR errors before classification
+- **Document date detection** — updates the Paperless document date when a reliable original date is found
 - **Document chat** — ask questions about any document via the web UI
 - **Document search & preview** — search Paperless documents from the Chat page; preview what AI processing would do without modifying Paperless
 - **Auto-scheduler** — polls for new `ai-process` tagged documents on a configurable interval
@@ -153,6 +154,7 @@ Instead of running the full pipeline with `ai-process`, you can tag a document w
 | `ai-process`       | Standard metadata pipeline using existing Paperless text |
 | `ai-ocr`           | Vision OCR only      |
 | `ai-ocr-fix`       | OCR error correction only |
+| `ai-date`          | Document date detection and `created_date` update |
 | `ai-title`         | Title generation only |
 | `ai-correspondent` | Correspondent classification only |
 | `ai-document-type` | Document type classification only |
@@ -167,11 +169,14 @@ Common combinations:
 |------|--------|
 | `ai-ocr` + `ai-process` | Vision OCR first, then the standard metadata pipeline |
 | `ai-ocr` + `ai-ocr-fix` | Vision OCR first, then OCR correction |
+| `ai-ocr` + `ai-date` | Vision OCR first, then document date detection |
 | `ai-ocr` + `ai-ocr-fix` + `ai-process` | Vision OCR, OCR correction, then the standard metadata pipeline |
 
 Legacy override tags `force_ocr` and `force-ocr-fix` are still supported for compatibility. For new workflows, prefer `ai-ocr` and `ai-ocr-fix`.
 
 > **Note on `ai-fields` + type-specific prompts:** When `ai-fields` runs without `ai-document-type`, the processor reads the document's current document type from Paperless and uses it to match any active `type_specific` prompts. You do not need to add `ai-document-type` just to get type-specific field extraction to work.
+
+`ai-date` updates the Paperless document date (`created_date` concept). It does not change when the file was added to Paperless or imported. Low-confidence or ambiguous model results are logged but not written.
 
 Documents tagged with any modular tag are picked up by the scheduler and the process queue alongside `ai-process` documents.
 
@@ -187,6 +192,7 @@ All processing steps are driven by configurable prompts managed in the **Prompts
 | `correspondent` | Detects the correspondent from your Paperless list |
 | `document_type` | Classifies the document type |
 | `tag` | Assigns tags from your Paperless list |
+| `date` | Detects the original document date for Paperless `created_date` |
 | `extract` | Extracts custom fields for all documents (expects JSON response) |
 | `type_specific` | Extracts custom fields for one specific document type only |
 | `ocr_fix` | Corrects OCR errors before classification |

@@ -83,3 +83,18 @@ async def test_metadata_collection_force_refresh_fetches_and_replaces_cache():
 
 def test_metadata_cache_ttl_is_one_hour():
     assert PAPERLESS_METADATA_CACHE_TTL == 3600
+
+
+@pytest.mark.asyncio
+async def test_update_document_maps_created_date_to_paperless_created_field():
+    client = PaperlessClient(base_url=BASE_URL, token="token")
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.json.return_value = {"id": 1051, "created": "2026-04-28"}
+    client.client.patch = AsyncMock(return_value=response)
+
+    await client.update_document(1051, created_date="2026-04-28")
+
+    assert client.client.patch.await_args.kwargs["json"] == {"created": "2026-04-28"}
+
+    await client.close()

@@ -151,6 +151,16 @@ describe('getTriggerTag', () => {
     expect(getTriggerTag('vision_ocr', {})).toBe('ai-ocr')
     expect(getTriggerTag('ocr_fix', {})).toBe('ai-ocr-fix')
   })
+
+  it('returns date trigger tag default when config key is not present', () => {
+    expect(getTriggerTag('date', {})).toBe('ai-date')
+  })
+
+  it('returns configured date trigger tag when modular tag is present', () => {
+    expect(getTriggerTag('date', { modular_tag_date: 'detect-document-date' })).toBe(
+      'detect-document-date',
+    )
+  })
 })
 
 describe('PromptManager Component', () => {
@@ -221,6 +231,32 @@ describe('PromptManager Component', () => {
       expect(screen.getByText('OCR Fix')).toBeInTheDocument()
       expect(screen.getByText('ai-ocr')).toBeInTheDocument()
       expect(screen.getByText('ai-ocr-fix')).toBeInTheDocument()
+    })
+  })
+
+  it('shows date trigger tag for active date prompts', async () => {
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 12,
+            name: 'Detect Date',
+            prompt_type: 'date',
+            document_type_filter: null,
+            system_prompt: 'Detect document date',
+            user_template: 'Content: {{content}}',
+            is_active: true,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({ modular_tag_date: 'detect-document-date' }))
+
+    render(<PromptManager />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Detect Date')).toBeInTheDocument()
+      expect(screen.getByText('detect-document-date')).toBeInTheDocument()
     })
   })
 

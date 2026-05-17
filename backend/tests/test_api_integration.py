@@ -55,6 +55,19 @@ def test_config_sensitive_key_not_accessible(client):
 
 def test_stats_endpoints(client):
     """Stats endpoints return valid data."""
+    from app.database import get_session
+    from app.models import ProcessingLog
+
+    with get_session() as session:
+        session.add(
+            ProcessingLog(
+                document_id=99,
+                document_title="Date Test",
+                status="success",
+                llm_response='{"steps":[{"name":"date","details":{"created_date":"2026-04-28"}}]}',
+            )
+        )
+
     response = client.get("/api/stats")
     assert response.status_code == 200
     assert "total_processed" in response.json()
@@ -64,6 +77,7 @@ def test_stats_endpoints(client):
 
     response = client.get("/api/stats/recent?limit=10")
     assert response.status_code == 200
+    assert any(log.get("llm_response") for log in response.json())
 
 
 def test_stats_bounds(client):

@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.steps.ocr_step import OCRStep
 from app.services.steps.ocr_fix_step import OCRFixStep
+from app.services.steps.date_step import DateStep
 from app.services.steps.title_step import TitleStep
 from app.services.steps.correspondent_step import CorrespondentStep
 from app.services.steps.document_type_step import DocumentTypeStep
@@ -16,6 +17,7 @@ CONFIG = {
     "force_ocr_fix_tag": "force-ocr-fix",
     "modular_tag_ocr": "ai-ocr",
     "modular_tag_ocr_fix": "ai-ocr-fix",
+    "modular_tag_date": "ai-date",
     "modular_tag_process": "ai-process",
     "modular_tag_title": "ai-title",
     "modular_tag_correspondent": "ai-correspondent",
@@ -62,6 +64,17 @@ def test_ocr_fix_step_triggers_on_modular_fix_tag():
 
 def test_ocr_fix_step_ignores_ai_process():
     step = OCRFixStep(CONFIG)
+    assert step.can_handle({"ai-process"}) is False
+
+
+# --- DateStep ---
+
+def test_date_step_triggers_on_ai_date():
+    step = DateStep(CONFIG)
+    assert step.can_handle({"ai-date"}) is True
+
+def test_date_step_ignores_ai_process():
+    step = DateStep(CONFIG)
     assert step.can_handle({"ai-process"}) is False
 
 

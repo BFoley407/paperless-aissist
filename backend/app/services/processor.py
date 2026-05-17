@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 MODULAR_TAG_DEFAULTS: dict[str, str] = {
     "modular_tag_ocr": "ai-ocr",
     "modular_tag_ocr_fix": "ai-ocr-fix",
+    "modular_tag_date": "ai-date",
     "modular_tag_title": "ai-title",
     "modular_tag_correspondent": "ai-correspondent",
     "modular_tag_document_type": "ai-document-type",
@@ -69,6 +70,7 @@ class DocumentProcessor:
         from .steps import (
             OCRStep,
             OCRFixStep,
+            DateStep,
             TitleStep,
             CorrespondentStep,
             DocumentTypeStep,
@@ -80,6 +82,7 @@ class DocumentProcessor:
         steps = [
             await OCRStep.from_config(config),
             await OCRFixStep.from_config(config),
+            await DateStep.from_config(config),
             await TitleStep.from_config(config),
             await CorrespondentStep.from_config(config),
             await DocumentTypeStep.from_config(config),
@@ -378,15 +381,22 @@ Available Custom Fields: [{custom_fields_list}]"""
         step_records = []
         accumulated_update = {}
 
-        def add_step(name, status, duration_ms, error=None):
-            step_records.append(
-                {
-                    "name": name,
-                    "status": status,
-                    "duration_ms": duration_ms,
-                    "error": error,
-                }
-            )
+        def add_step(
+            name: str,
+            status: str,
+            duration_ms: int,
+            error: Optional[str] = None,
+            details: Optional[dict[str, Any]] = None,
+        ):
+            record = {
+                "name": name,
+                "status": status,
+                "duration_ms": duration_ms,
+                "error": error,
+            }
+            if details:
+                record["details"] = details
+            step_records.append(record)
 
         for step_instance in steps:
             if not step_instance.can_handle(preview_trigger_tags):
@@ -399,12 +409,35 @@ Available Custom Fields: [{custom_fields_list}]"""
                 duration_ms = int((time.time() - step_start) * 1000)
 
                 if result.error:
-                    add_step(step_instance.name, "failed", duration_ms, result.error)
+                    add_step(
+                        step_instance.name,
+                        "failed",
+                        duration_ms,
+                        result.error,
+                        result.details,
+                    )
+                elif result.skipped:
+                    add_step(
+                        step_instance.name,
+                        "skipped",
+                        duration_ms,
+                        details=result.details,
+                    )
                 elif result.data:
-                    add_step(step_instance.name, "completed", duration_ms)
+                    add_step(
+                        step_instance.name,
+                        "completed",
+                        duration_ms,
+                        details=result.details,
+                    )
                     accumulated_update.update(result.data)
                 else:
-                    add_step(step_instance.name, "completed", duration_ms)
+                    add_step(
+                        step_instance.name,
+                        "completed",
+                        duration_ms,
+                        details=result.details,
+                    )
             except Exception as step_error:
                 duration_ms = int((time.time() - step_start) * 1000)
                 add_step(step_instance.name, "failed", duration_ms, str(step_error))
@@ -522,16 +555,21 @@ Available Custom Fields: [{custom_fields_list}]"""
         accumulated_update: dict[str, Any] = {}
 
         def add_step(
-            name: str, status: str, duration_ms: int, error: Optional[str] = None
+            name: str,
+            status: str,
+            duration_ms: int,
+            error: Optional[str] = None,
+            details: Optional[dict[str, Any]] = None,
         ):
-            step_records.append(
-                {
-                    "name": name,
-                    "status": status,
-                    "duration_ms": duration_ms,
-                    "error": error,
-                }
-            )
+            record = {
+                "name": name,
+                "status": status,
+                "duration_ms": duration_ms,
+                "error": error,
+            }
+            if details:
+                record["details"] = details
+            step_records.append(record)
 
         try:
             for step_instance in step_instances:
@@ -546,20 +584,48 @@ Available Custom Fields: [{custom_fields_list}]"""
 
                     if result.error:
                         add_step(
-                            step_instance.name, "failed", duration_ms, result.error
+                            step_instance.name,
+                            "failed",
+                            duration_ms,
+                            result.error,
+                            result.details,
                         )
                         logger.info(f"    ✗ {step_instance.name} failed: {result.error}")
                         break
+                    elif result.skipped:
+                        add_step(
+                            step_instance.name,
+                            "skipped",
+                            duration_ms,
+                            details=result.details,
+                        )
+                        logger.info(
+                            f"    - {step_instance.name} skipped ({duration_ms}ms)"
+                        )
                     elif result.data:
-                        add_step(step_instance.name, "completed", duration_ms)
-                        logger.info(f"    ✓ {step_instance.name} completed ({duration_ms}ms)")
+                        add_step(
+                            step_instance.name,
+                            "completed",
+                            duration_ms,
+                            details=result.details,
+                        )
+                        logger.info(
+                            f"    ✓ {step_instance.name} completed ({duration_ms}ms)"
+                        )
                         await step_instance.update_metadata(ctx, result)
                         accumulated_update.update(result.data)
                         if "title" in result.data:
                             ctx.ocr_text = ctx.ocr_text or ""
                     else:
-                        add_step(step_instance.name, "completed", duration_ms)
-                        logger.info(f"    ✓ {step_instance.name} completed ({duration_ms}ms)")
+                        add_step(
+                            step_instance.name,
+                            "completed",
+                            duration_ms,
+                            details=result.details,
+                        )
+                        logger.info(
+                            f"    ✓ {step_instance.name} completed ({duration_ms}ms)"
+                        )
 
                 except Exception as step_error:
                     duration_ms = int((time.time() - step_start) * 1000)
@@ -613,7 +679,8 @@ Available Custom Fields: [{custom_fields_list}]"""
             k in accumulated_update
             for k in ("title", "correspondent", "document_type", "tags")
         )
-        if not has_classification:
+        process_trigger_name = config_dict.get("modular_tag_process") or "ai-process"
+        if process_trigger_name in doc_tag_names and not has_classification:
             async with get_async_session() as session:
                 stmt = select(Prompt).where(
                     Prompt.prompt_type == "classify", Prompt.is_active.is_(True)
@@ -772,7 +839,7 @@ Available Custom Fields: [{custom_fields_list}]"""
                 status="failed",
                 provider=llm.provider,
                 model=llm.model,
-                llm_response=None,
+                llm_response=json.dumps({"steps": step_records}),
                 error_message=f"Paperless update failed: {error_detail}",
                 processing_time_ms=processing_time_ms,
                 log_id=log_id,
@@ -818,6 +885,7 @@ Available Custom Fields: [{custom_fields_list}]"""
         step_to_config = {
             "ocr": "modular_tag_ocr",
             "ocr_fix": "modular_tag_ocr_fix",
+            "date": "modular_tag_date",
             "title": "modular_tag_title",
             "correspondent": "modular_tag_correspondent",
             "document_type": "modular_tag_document_type",

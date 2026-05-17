@@ -125,6 +125,7 @@ async def get_recent_logs(limit: int = 20, user: dict = Depends(require_auth)):
                 status=log.status,
                 llm_provider=log.llm_provider,
                 llm_model=log.llm_model,
+                llm_response=log.llm_response,
                 error_message=log.error_message,
                 processing_time_ms=log.processing_time_ms,
                 processed_at=log.processed_at.isoformat() if log.processed_at else None,

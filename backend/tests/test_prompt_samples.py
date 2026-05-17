@@ -54,3 +54,18 @@ def test_inactive_localized_rechnung_sample_remains_inactive():
     assert prompt["prompt_type"] == "type_specific"
     assert prompt["document_type_filter"] == "Rechnung"
     assert prompt["is_active"] is False
+
+
+def test_active_date_detection_prompt_requests_strict_safe_json():
+    prompt = load_prompt("date-detection.json")
+    system_prompt = prompt["system_prompt"]
+
+    assert prompt["prompt_type"] == "date"
+    assert prompt["is_active"] is True
+    assert "strict JSON" in system_prompt
+    assert "due date" in system_prompt
+    assert "payment date" in system_prompt
+    assert "service period" in system_prompt
+    assert "added date" in system_prompt
+    assert "modified date" in system_prompt
+    assert "{created_date}" in prompt["user_template"]

@@ -199,7 +199,10 @@
     "create": "Erstellen",
     "confirmDelete": "Diesen Prompt wirklich löschen?",
     "confirmLoadSamples": "Alle Beispiel-Prompts werden auf die Standardwerte zurückgesetzt. Eigene Prompts sind nicht betroffen.",
-    "samplesLoaded": "Geladen: {{created}} erstellt, {{updated}} aktualisiert"
+    "samplesLoaded": "Geladen: {{created}} erstellt, {{updated}} aktualisiert",
+    "promptTypes": {
+      "date": "Datumserkennung"
+    }
   },
   "processing": {
     "processingInProgress": "Verarbeitung läuft...",

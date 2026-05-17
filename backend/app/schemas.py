@@ -57,6 +57,7 @@ class RecentLogItem(BaseModel):
     status: str
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+    llm_response: Optional[str] = None
     error_message: Optional[str] = None
     processing_time_ms: Optional[int] = None
     processed_at: Optional[str] = None

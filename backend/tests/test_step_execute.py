@@ -5,6 +5,7 @@ No real network calls or database access.
 """
 
 import pytest
+import json
 from unittest.mock import patch, AsyncMock, MagicMock
 
 # Imports for tasks
@@ -14,6 +15,7 @@ from app.services.steps.correspondent_step import CorrespondentStep
 from app.services.steps.document_type_step import DocumentTypeStep
 from app.services.steps.tags_step import TagsStep
 from app.services.steps.fields_step import FieldsStep
+from app.services.steps.date_step import DateStep
 from app.services.processor import DocumentProcessor
 from app.services.steps.base import StepContext, StepResult
 from app.models import Prompt
@@ -743,6 +745,184 @@ class TestResolveProposedChanges:
         ]
 
 
+class TestDateStep:
+    @pytest.fixture
+    def ctx(self, mock_paperless, mock_llm):
+        return StepContext(
+            doc_id=1,
+            paperless=mock_paperless,
+            llm=mock_llm,
+            config={"modular_tag_date": "ai-date"},
+            trigger_tags={"ai-date"},
+            ocr_text="Rechnungsdatum: Dienstag, 28. April 2026",
+        )
+
+    def _setup_db(self, mock_get_session):
+        prompt = MagicMock(spec=Prompt)
+        prompt.prompt_type = "date"
+        prompt.system_prompt = "Return strict JSON."
+        prompt.user_template = "Title: {title}\nCurrent: {created_date}\n{content}"
+        prompt.is_active = True
+        mock_session = AsyncMock()
+        mock_session.exec = AsyncMock(
+            return_value=MagicMock(first=MagicMock(return_value=prompt))
+        )
+        mock_get_session.return_value.__aenter__.return_value = mock_session
+
+    @pytest.mark.asyncio
+    async def test_updates_created_date_on_high_confidence(
+        self, ctx, mock_llm, mock_paperless
+    ):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": (
+                    '{"created_date":"2026-04-28","confidence":"high",'
+                    '"evidence":"Rechnungsdatum: Dienstag, 28. April 2026"}'
+                )
+            }
+        )
+        mock_paperless.get_document = AsyncMock(
+            return_value={
+                "id": 1,
+                "title": "Invoice",
+                "created": "2026-05-17",
+                "content": "Original Paperless text",
+                "tags": [42],
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.data == {"created_date": "2026-04-28"}
+        assert result.details == {
+            "created_date": "2026-04-28",
+            "confidence": "high",
+            "evidence": "Rechnungsdatum: Dienstag, 28. April 2026",
+        }
+        user_prompt = mock_llm.complete.await_args.kwargs["user_prompt"]
+        assert "Rechnungsdatum: Dienstag, 28. April 2026" in user_prompt
+        assert "Current: 2026-05-17" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_updates_created_date_on_medium_confidence(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":"2026-04-28","confidence":"medium","evidence":"28. April 2026"}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.data == {"created_date": "2026-04-28"}
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_accepts_parsed_json_response_from_llm_handler(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "created_date": "2026-04-28",
+                "confidence": "high",
+                "evidence": "28. April 2026",
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.data == {"created_date": "2026-04-28"}
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_skips_low_confidence_without_paperless_update(
+        self, ctx, mock_llm, mock_paperless
+    ):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":"2026-04-28","confidence":"low","evidence":"unclear"}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.skipped is True
+        assert result.data == {}
+        assert result.details["reason"] == "low confidence"
+        mock_paperless.update_document.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_skips_null_date(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":null,"confidence":"medium","evidence":""}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.skipped is True
+        assert result.details["created_date"] is None
+        assert result.details["reason"] == "no reliable document date"
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_active_prompt(self, ctx):
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            mock_session = AsyncMock()
+            mock_session.exec = AsyncMock(
+                return_value=MagicMock(first=MagicMock(return_value=None))
+            )
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.skipped is True
+        assert result.details["reason"] == "no active date prompt"
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_content(self, ctx, mock_paperless):
+        ctx.ocr_text = None
+        mock_paperless.get_document = AsyncMock(
+            return_value={"id": 1, "title": "Empty", "created": "2026-05-17", "content": ""}
+        )
+
+        result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.skipped is True
+        assert result.details["reason"] == "no content"
+
+    @pytest.mark.asyncio
+    async def test_invalid_json_returns_error(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(return_value={"text": "not json"})
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.error.startswith("invalid date response:")
+
+    @pytest.mark.asyncio
+    async def test_invalid_date_returns_error(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":"2026-02-31","confidence":"high","evidence":"31.02.2026"}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.error == "invalid calendar date: 2026-02-31"
+        assert result.details["created_date"] == "2026-02-31"
+
+
 class TestDocumentProcessorFailureHandling:
     @pytest.mark.asyncio
     async def test_failed_step_result_skips_finalization_and_logs_failure(
@@ -804,6 +984,126 @@ class TestDocumentProcessorFailureHandling:
         failed_log_call = processor._log_processing.await_args_list[-1].kwargs
         assert failed_log_call["status"] == "failed"
         assert "timeout" in failed_log_call["error_message"]
+
+    @pytest.mark.asyncio
+    async def test_skipped_step_details_are_logged(self, mock_paperless, mock_llm):
+        """A skipped step should log diagnostic details and avoid metadata hooks."""
+        mock_llm.provider = "test-provider"
+        mock_llm.model = "test-model"
+
+        class DetailOnlyStep:
+            name = "date"
+
+            def can_handle(self, tags):
+                return True
+
+            async def execute(self, ctx):
+                return StepResult(
+                    data={},
+                    details={
+                        "created_date": None,
+                        "confidence": "low",
+                        "reason": "low confidence",
+                    },
+                    skipped=True,
+                )
+
+            async def update_metadata(self, ctx, result):
+                raise AssertionError("skipped step must not update metadata")
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._build_steps = AsyncMock(return_value=[DetailOnlyStep()])
+        processor._get_config_dict = AsyncMock(return_value={"modular_tag_date": "ai-date"})
+        processor._get_config = AsyncMock(
+            side_effect=lambda key, default=None: {
+                "process_tag": "ai-process",
+                "processed_tag": "ai-processed",
+            }.get(key, default)
+        )
+        processor._log_processing = AsyncMock(return_value=123)
+
+        with patch(
+            "app.services.processor.LLMHandlerManager.get_handler",
+            AsyncMock(return_value=mock_llm),
+        ):
+            result = await processor.process_document(1)
+
+        assert result["success"] is True
+        assert result["steps"][0]["name"] == "date"
+        assert result["steps"][0]["status"] == "skipped"
+        assert result["steps"][0]["details"]["reason"] == "low confidence"
+        success_log_call = processor._log_processing.await_args_list[-1].kwargs
+        logged = json.loads(success_log_call["llm_response"])
+        assert logged["steps"][0]["details"]["created_date"] is None
+
+    @pytest.mark.asyncio
+    async def test_date_step_result_updates_paperless_created_date_and_tags(
+        self, mock_paperless, mock_llm
+    ):
+        """A successful date step should PATCH created_date and remove ai-date."""
+        mock_llm.provider = "test-provider"
+        mock_llm.model = "test-model"
+        mock_paperless.get_document = AsyncMock(
+            return_value={
+                "id": 1,
+                "title": "Invoice",
+                "content": "Rechnungsdatum: Dienstag, 28. April 2026",
+                "tags": [42],
+                "custom_fields": [],
+            }
+        )
+        mock_paperless.get_tags = AsyncMock(
+            return_value=[
+                {"id": 42, "name": "ai-date"},
+                {"id": 30, "name": "ai-processed"},
+            ]
+        )
+        mock_paperless.get_correspondents = AsyncMock(return_value=[])
+        mock_paperless.get_document_types = AsyncMock(return_value=[])
+        mock_paperless.get_custom_fields = AsyncMock(return_value=[])
+
+        date_step = MagicMock()
+        date_step.name = "date"
+        date_step.can_handle.return_value = True
+        date_step.execute = AsyncMock(
+            return_value=StepResult(
+                data={"created_date": "2026-04-28"},
+                details={
+                    "created_date": "2026-04-28",
+                    "confidence": "high",
+                    "evidence": "Rechnungsdatum: Dienstag, 28. April 2026",
+                },
+            )
+        )
+        date_step.update_metadata = AsyncMock()
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._build_steps = AsyncMock(return_value=[date_step])
+        processor._get_config_dict = AsyncMock(return_value={"modular_tag_date": "ai-date"})
+        processor._get_config = AsyncMock(
+            side_effect=lambda key, default=None: {
+                "process_tag": "ai-process",
+                "processed_tag": "ai-processed",
+            }.get(key, default)
+        )
+        processor._log_processing = AsyncMock(return_value=123)
+
+        with patch(
+            "app.services.processor.LLMHandlerManager.get_handler",
+            AsyncMock(return_value=mock_llm),
+        ):
+            result = await processor.process_document(1)
+
+        assert result["success"] is True
+        assert result["steps"][0]["details"]["created_date"] == "2026-04-28"
+        assert any(
+            call.kwargs.get("created_date") == "2026-04-28"
+            for call in mock_paperless.update_document.await_args_list
+        )
+        assert any(
+            set(call.kwargs.get("tags", [])) == {30}
+            for call in mock_paperless.update_document.await_args_list
+        )
 
     @pytest.mark.asyncio
     async def test_process_tagged_documents_counts_only_successful_results(
