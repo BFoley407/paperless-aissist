@@ -761,7 +761,9 @@ class TestDateStep:
         prompt = MagicMock(spec=Prompt)
         prompt.prompt_type = "date"
         prompt.system_prompt = "Return strict JSON."
-        prompt.user_template = "Title: {title}\nCurrent: {created_date}\n{content}"
+        prompt.user_template = (
+            "Title: {title}\nCurrent: {created_date}\nToday: {current_date}\n{content}"
+        )
         prompt.is_active = True
         mock_session = AsyncMock()
         mock_session.exec = AsyncMock(
@@ -804,6 +806,8 @@ class TestDateStep:
         user_prompt = mock_llm.complete.await_args.kwargs["user_prompt"]
         assert "Rechnungsdatum: Dienstag, 28. April 2026" in user_prompt
         assert "Current: 2026-05-17" in user_prompt
+        assert "Today: " in user_prompt
+        assert "{current_date}" not in user_prompt
 
     @pytest.mark.asyncio
     async def test_updates_created_date_on_medium_confidence(self, ctx, mock_llm):
@@ -921,6 +925,21 @@ class TestDateStep:
 
         assert result.error == "invalid calendar date: 2026-02-31"
         assert result.details["created_date"] == "2026-02-31"
+
+    @pytest.mark.asyncio
+    async def test_mixed_date_or_null_string_returns_error(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":"2019-03-22|null","confidence":"medium","evidence":"valid from: 03.99"}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.error == "invalid date format: 2019-03-22|null"
+        assert result.details["created_date"] == "2019-03-22|null"
 
 
 class TestDocumentProcessorFailureHandling:

@@ -58,6 +58,7 @@ async def test_date_prompt_extracts_issue_date_with_real_ollama():
         prompt["user_template"]
         .replace("{title}", "Starlink Invoice")
         .replace("{created_date}", "2026-05-17")
+        .replace("{current_date}", "2026-05-18")
         .replace(
             "{content}",
             (

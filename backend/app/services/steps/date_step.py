@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlmodel import select
@@ -43,6 +43,7 @@ class DateStep(AbstractStep):
             text = doc.get("content", "").strip() if doc.get("content") else ""
         original_title = doc.get("title", "")
         current_created = doc.get("created", "")
+        current_date = datetime.now(timezone.utc).date().isoformat()
 
         if not text:
             return StepResult(
@@ -78,6 +79,7 @@ class DateStep(AbstractStep):
             prompt.user_template.replace("{content}", text[:CONTENT_TRUNCATION_LIMIT])
             .replace("{title}", original_title or "")
             .replace("{created_date}", current_created or "")
+            .replace("{current_date}", current_date)
         )
 
         try:

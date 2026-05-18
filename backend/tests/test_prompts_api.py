@@ -33,3 +33,4 @@ def test_prompt_templates_include_date_prompt_type(client):
     assert "date" in prompt_types
     variables = response.json()["variables"]
     assert {"name": "{created_date}", "description": "Current document date"} in variables
+    assert {"name": "{current_date}", "description": "Current date"} in variables

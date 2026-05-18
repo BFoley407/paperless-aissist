@@ -73,6 +73,7 @@ async def get_prompt_templates():
             },
             {"name": "{title}", "description": "Original document title"},
             {"name": "{created_date}", "description": "Current document date"},
+            {"name": "{current_date}", "description": "Current date"},
         ],
         "types": [
             {"value": "correspondent", "description": "Correspondent detection"},

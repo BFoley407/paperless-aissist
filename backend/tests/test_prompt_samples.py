@@ -69,3 +69,7 @@ def test_active_date_detection_prompt_requests_strict_safe_json():
     assert "added date" in system_prompt
     assert "modified date" in system_prompt
     assert "{created_date}" in prompt["user_template"]
+    assert "{current_date}" in prompt["user_template"]
+    assert "Never return mixed values" in system_prompt
+    assert "Do not return dates after the current date" in system_prompt
+    assert "two-digit year" in system_prompt
