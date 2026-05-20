@@ -912,7 +912,7 @@ class TestDateStep:
         assert result.error.startswith("invalid date response:")
 
     @pytest.mark.asyncio
-    async def test_invalid_date_returns_error(self, ctx, mock_llm):
+    async def test_invalid_calendar_date_is_skipped(self, ctx, mock_llm):
         mock_llm.complete = AsyncMock(
             return_value={
                 "text": '{"created_date":"2026-02-31","confidence":"high","evidence":"31.02.2026"}'
@@ -923,11 +923,16 @@ class TestDateStep:
             self._setup_db(mock_get_session)
             result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
 
-        assert result.error == "invalid calendar date: 2026-02-31"
+        assert result.skipped is True
+        assert result.error is None
+        assert result.data == {}
         assert result.details["created_date"] == "2026-02-31"
+        assert result.details["confidence"] == "high"
+        assert result.details["evidence"] == "31.02.2026"
+        assert result.details["reason"] == "invalid calendar date"
 
     @pytest.mark.asyncio
-    async def test_mixed_date_or_null_string_returns_error(self, ctx, mock_llm):
+    async def test_mixed_date_or_null_string_is_skipped(self, ctx, mock_llm):
         mock_llm.complete = AsyncMock(
             return_value={
                 "text": '{"created_date":"2019-03-22|null","confidence":"medium","evidence":"valid from: 03.99"}'
@@ -938,8 +943,33 @@ class TestDateStep:
             self._setup_db(mock_get_session)
             result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
 
-        assert result.error == "invalid date format: 2019-03-22|null"
+        assert result.skipped is True
+        assert result.error is None
+        assert result.data == {}
         assert result.details["created_date"] == "2019-03-22|null"
+        assert result.details["confidence"] == "medium"
+        assert result.details["evidence"] == "valid from: 03.99"
+        assert result.details["reason"] == "invalid date format"
+
+    @pytest.mark.asyncio
+    async def test_qwen_mixed_date_or_null_string_is_skipped(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(
+            return_value={
+                "text": '{"created_date":"2026-07-08|null","confidence":"medium","evidence":"08.07.2026"}'
+            }
+        )
+
+        with patch("app.services.steps.date_step.get_async_session") as mock_get_session:
+            self._setup_db(mock_get_session)
+            result = await DateStep({"modular_tag_date": "ai-date"}).execute(ctx)
+
+        assert result.skipped is True
+        assert result.error is None
+        assert result.data == {}
+        assert result.details["created_date"] == "2026-07-08|null"
+        assert result.details["confidence"] == "medium"
+        assert result.details["evidence"] == "08.07.2026"
+        assert result.details["reason"] == "invalid date format"
 
 
 class TestDocumentProcessorFailureHandling:

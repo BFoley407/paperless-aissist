@@ -118,17 +118,19 @@ class DateStep(AbstractStep):
             return StepResult(details=details, skipped=True)
 
         if not isinstance(created_date, str) or not ISO_DATE_RE.match(created_date):
+            details["reason"] = "invalid date format"
             return StepResult(
-                error=f"invalid date format: {created_date}",
                 details=details,
+                skipped=True,
             )
 
         try:
             date.fromisoformat(created_date)
         except ValueError:
+            details["reason"] = "invalid calendar date"
             return StepResult(
-                error=f"invalid calendar date: {created_date}",
                 details=details,
+                skipped=True,
             )
 
         return StepResult(data={"created_date": created_date}, details=details)

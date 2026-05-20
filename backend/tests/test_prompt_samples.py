@@ -73,3 +73,7 @@ def test_active_date_detection_prompt_requests_strict_safe_json():
     assert "Never return mixed values" in system_prompt
     assert "Do not return dates after the current date" in system_prompt
     assert "two-digit year" in system_prompt
+    assert "YYYY-MM-DD or null" not in system_prompt
+    assert '"created_date":"2026-04-28"' in system_prompt
+    assert '"created_date":null' in system_prompt
+    assert "never put null inside a string" in system_prompt
