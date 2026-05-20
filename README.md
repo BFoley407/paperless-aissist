@@ -215,7 +215,7 @@ The **Document Type Filter** on a `type_specific` prompt limits it to run only w
 
 ### Load Samples
 
-Use the **Load Samples** button in the Prompts UI to reset all prompts to the built-in defaults. This updates existing prompts matched by name and adds any missing ones.
+Use the **Load Samples** button in the Prompts UI to add any missing built-in sample prompts. Existing prompts are not blindly overwritten during upgrades: unchanged sample prompts can be updated automatically, while edited, legacy, and custom prompts are preserved. The Prompt Manager shows each prompt's sample status, and a single prompt can be replaced manually with its bundled sample from the edit dialog.
 
 ## Authentication
 

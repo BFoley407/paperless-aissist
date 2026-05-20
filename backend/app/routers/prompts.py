@@ -1,13 +1,21 @@
 """Prompt template CRUD endpoints with type filtering and sample loading."""
 
-from fastapi import APIRouter, HTTPException
-from sqlmodel import select
-from typing import Optional
 from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from sqlmodel import select
 
 from ..database import get_async_session
 from ..models import Prompt
+from ..services.prompt_samples import (
+    SAMPLE_FIELDS,
+    find_sample_for_prompt,
+    load_samples,
+    sample_payload,
+    sample_status,
+)
 
 router = APIRouter(prefix="/api/prompts", tags=["prompts"])
 
@@ -30,27 +38,34 @@ class PromptUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+def _serialize_prompt(prompt: Prompt, samples: dict[str, dict] | None = None) -> dict:
+    samples = samples or load_samples()
+    sample = find_sample_for_prompt(prompt, samples)
+    return {
+        "id": prompt.id,
+        "name": prompt.name,
+        "prompt_type": prompt.prompt_type,
+        "document_type_filter": prompt.document_type_filter,
+        "system_prompt": prompt.system_prompt,
+        "user_template": prompt.user_template,
+        "is_active": prompt.is_active,
+        "created_at": prompt.created_at.isoformat(),
+        "updated_at": prompt.updated_at.isoformat(),
+        "sample_key": sample["sample_key"] if sample else prompt.sample_key,
+        "sample_hash": prompt.sample_hash,
+        "sample_status": sample_status(prompt, sample),
+    }
+
+
 @router.get("")
 async def get_prompts():
     """Return all prompt templates."""
+    samples = load_samples()
     async with get_async_session() as session:
         stmt = select(Prompt)
         prompts = await session.exec(stmt)
         prompts = prompts.all()
-        return [
-            {
-                "id": p.id,
-                "name": p.name,
-                "prompt_type": p.prompt_type,
-                "document_type_filter": p.document_type_filter,
-                "system_prompt": p.system_prompt,
-                "user_template": p.user_template,
-                "is_active": p.is_active,
-                "created_at": p.created_at.isoformat(),
-                "updated_at": p.updated_at.isoformat(),
-            }
-            for p in prompts
-        ]
+        return [_serialize_prompt(p, samples) for p in prompts]
 
 
 @router.get("/templates")
@@ -105,23 +120,14 @@ async def get_prompt_templates():
 @router.get("/{prompt_id}")
 async def get_prompt(prompt_id: int):
     """Return a single prompt template by ID."""
+    samples = load_samples()
     async with get_async_session() as session:
         stmt = select(Prompt).where(Prompt.id == prompt_id)
         prompt = await session.exec(stmt)
         prompt = prompt.first()
         if not prompt:
             raise HTTPException(status_code=404, detail="Prompt not found")
-        return {
-            "id": prompt.id,
-            "name": prompt.name,
-            "prompt_type": prompt.prompt_type,
-            "document_type_filter": prompt.document_type_filter,
-            "system_prompt": prompt.system_prompt,
-            "user_template": prompt.user_template,
-            "is_active": prompt.is_active,
-            "created_at": prompt.created_at.isoformat(),
-            "updated_at": prompt.updated_at.isoformat(),
-        }
+        return _serialize_prompt(prompt, samples)
 
 
 @router.post("")
@@ -180,44 +186,66 @@ async def update_prompt(prompt_id: int, prompt: PromptUpdate):
 
 @router.post("/load-samples")
 async def load_sample_prompts():
-    from pathlib import Path
-    import json
-
-    examples_dir = Path(__file__).parent.parent.parent.parent / "examples" / "prompts"
-    if not examples_dir.exists():
-        raise HTTPException(status_code=404, detail="Examples directory not found")
-
-    created, updated = 0, 0
+    created, updated, skipped = 0, 0, 0
+    samples = load_samples()
+    now = datetime.now(timezone.utc)
     async with get_async_session() as session:
-        for json_file in sorted(examples_dir.glob("*.json")):
-            with open(json_file) as f:
-                p = json.load(f)
-            stmt = select(Prompt).where(Prompt.name == p["name"])
+        for sample in samples.values():
+            stmt = select(Prompt).where(Prompt.name == sample["name"])
             existing = await session.exec(stmt)
             existing = existing.first()
             if existing:
-                for field in (
-                    "prompt_type",
-                    "system_prompt",
-                    "user_template",
-                    "document_type_filter",
-                    "is_active",
-                ):
-                    if field in p:
-                        setattr(existing, field, p[field])
-                existing.updated_at = datetime.now(timezone.utc)
-                updated += 1
+                status = sample_status(existing, sample)
+                if status == "sample_update_available":
+                    for field in SAMPLE_FIELDS:
+                        setattr(existing, field, sample[field])
+                    existing.sample_key = sample["sample_key"]
+                    existing.sample_hash = sample["sample_hash"]
+                    existing.sample_updated_at = now
+                    existing.updated_at = now
+                    updated += 1
+                else:
+                    if existing.sample_key is None and status == "sample_current":
+                        existing.sample_key = sample["sample_key"]
+                        existing.sample_hash = sample["sample_hash"]
+                        existing.sample_updated_at = now
+                    skipped += 1
             else:
                 session.add(
                     Prompt(
-                        **p,
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc),
+                        **sample_payload(sample),
+                        sample_key=sample["sample_key"],
+                        sample_hash=sample["sample_hash"],
+                        sample_updated_at=now,
+                        created_at=now,
+                        updated_at=now,
                     )
                 )
                 created += 1
 
-    return {"created": created, "updated": updated}
+    return {"created": created, "updated": updated, "skipped": skipped}
+
+
+@router.post("/{prompt_id}/load-sample")
+async def load_prompt_sample(prompt_id: int):
+    samples = load_samples()
+    now = datetime.now(timezone.utc)
+    async with get_async_session() as session:
+        prompt = (await session.exec(select(Prompt).where(Prompt.id == prompt_id))).first()
+        if not prompt:
+            raise HTTPException(status_code=404, detail="Prompt not found")
+        sample = find_sample_for_prompt(prompt, samples)
+        if not sample:
+            raise HTTPException(status_code=404, detail="No bundled sample found for prompt")
+
+        for field in SAMPLE_FIELDS:
+            setattr(prompt, field, sample[field])
+        prompt.sample_key = sample["sample_key"]
+        prompt.sample_hash = sample["sample_hash"]
+        prompt.sample_updated_at = now
+        prompt.updated_at = now
+
+        return _serialize_prompt(prompt, samples)
 
 
 @router.delete("/{prompt_id}")

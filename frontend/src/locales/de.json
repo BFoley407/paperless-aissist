@@ -181,6 +181,7 @@
     "colName": "Name",
     "colType": "Typ",
     "colTypeFilter": "Typ-Filter",
+    "colSample": "Beispiel",
     "colStatus": "Status",
     "colActions": "Aktionen",
     "active": "Aktiv",
@@ -199,7 +200,23 @@
     "create": "Erstellen",
     "confirmDelete": "Diesen Prompt wirklich löschen?",
     "confirmLoadSamples": "Alle Beispiel-Prompts werden auf die Standardwerte zurückgesetzt. Eigene Prompts sind nicht betroffen.",
+    "confirmLoadPromptSample": "Diesen Prompt durch das mitgelieferte Beispiel ersetzen?",
     "samplesLoaded": "Geladen: {{created}} erstellt, {{updated}} aktualisiert",
+    "loadPromptSample": "Beispiel-Prompt laden",
+    "sampleStatus": {
+      "custom": "Eigener Prompt",
+      "sample_current": "Beispiel aktuell",
+      "sample_update_available": "Beispiel Update",
+      "modified": "Geändert",
+      "legacy_sample": "Beispiel alt"
+    },
+    "sampleStatusHelp": {
+      "custom": "kein mitgeliefertes Beispiel",
+      "sample_current": "entspricht dem aktuellen Beispiel",
+      "sample_update_available": "neues Beispiel verfügbar",
+      "modified": "lokal angepasst",
+      "legacy_sample": "aus älterem Stand"
+    },
     "promptTypes": {
       "date": "Datumserkennung"
     }

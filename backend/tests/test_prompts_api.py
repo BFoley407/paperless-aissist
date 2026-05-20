@@ -1,4 +1,13 @@
 from app.models import Prompt
+from sqlmodel import Session, select
+
+
+def delete_prompts_by_name(session: Session, *names: str) -> None:
+    for name in names:
+        prompts = session.exec(select(Prompt).where(Prompt.name == name)).all()
+        for prompt in prompts:
+            session.delete(prompt)
+    session.commit()
 
 
 def test_update_vision_ocr_prompt_allows_empty_user_template(client, session):
@@ -34,3 +43,83 @@ def test_prompt_templates_include_date_prompt_type(client):
     variables = response.json()["variables"]
     assert {"name": "{created_date}", "description": "Current document date"} in variables
     assert {"name": "{current_date}", "description": "Current date"} in variables
+
+
+def test_prompts_include_sample_status_for_legacy_sample(client, session):
+    delete_prompts_by_name(session, "Date Detection")
+    prompt = Prompt(
+        name="Date Detection",
+        prompt_type="date",
+        document_type_filter=None,
+        system_prompt="old date prompt",
+        user_template="old template",
+        is_active=True,
+    )
+    session.add(prompt)
+    session.commit()
+
+    response = client.get("/api/prompts")
+
+    assert response.status_code == 200
+    date_prompt = next(item for item in response.json() if item["name"] == "Date Detection")
+    assert date_prompt["sample_key"] == "date-detection"
+    assert date_prompt["sample_status"] == "legacy_sample"
+
+
+def test_load_samples_does_not_overwrite_legacy_prompt(client, session):
+    delete_prompts_by_name(session, "Date Detection")
+    prompt = Prompt(
+        name="Date Detection",
+        prompt_type="date",
+        document_type_filter=None,
+        system_prompt="manual date prompt",
+        user_template="manual template",
+        is_active=True,
+    )
+    session.add(prompt)
+    session.commit()
+    session.refresh(prompt)
+
+    response = client.post("/api/prompts/load-samples")
+
+    assert response.status_code == 200
+    assert response.json()["skipped"] >= 1
+    get_response = client.get(f"/api/prompts/{prompt.id}")
+    assert get_response.json()["system_prompt"] == "manual date prompt"
+    assert get_response.json()["sample_status"] == "legacy_sample"
+
+
+def test_load_single_sample_updates_only_one_prompt(client, session):
+    delete_prompts_by_name(session, "Date Detection", "Title Generation")
+    date_prompt = Prompt(
+        name="Date Detection",
+        prompt_type="date",
+        document_type_filter=None,
+        system_prompt="old date prompt",
+        user_template="old template",
+        is_active=True,
+    )
+    title_prompt = Prompt(
+        name="Title Generation",
+        prompt_type="title",
+        document_type_filter=None,
+        system_prompt="manual title prompt",
+        user_template="manual title template",
+        is_active=True,
+    )
+    session.add(date_prompt)
+    session.add(title_prompt)
+    session.commit()
+    session.refresh(date_prompt)
+    session.refresh(title_prompt)
+
+    response = client.post(f"/api/prompts/{date_prompt.id}/load-sample")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_key"] == "date-detection"
+    assert payload["sample_status"] == "sample_current"
+    assert "Current date: {current_date}" in payload["user_template"]
+
+    title_response = client.get(f"/api/prompts/{title_prompt.id}")
+    assert title_response.json()["system_prompt"] == "manual title prompt"

@@ -4,6 +4,13 @@ import { promptsApi, configApi } from '../api/client'
 import { Plus, Pencil, Trash2, X, RefreshCw } from 'lucide-react'
 import { MODULAR_TAG_DEFAULTS } from '../constants'
 
+type SampleStatus =
+  | 'custom'
+  | 'sample_current'
+  | 'sample_update_available'
+  | 'modified'
+  | 'legacy_sample'
+
 const PROMPT_TYPE_TO_CONFIG_KEY: Record<string, string | undefined> = {
   title: 'modular_tag_title',
   correspondent: 'modular_tag_correspondent',
@@ -31,6 +38,8 @@ interface Prompt {
   system_prompt: string
   user_template: string
   is_active: boolean
+  sample_key?: string | null
+  sample_status?: SampleStatus
 }
 
 interface TemplateInfo {
@@ -56,6 +65,9 @@ export default function PromptManager() {
     is_active: true,
   })
   const userTemplateRequired = formData.prompt_type !== 'vision_ocr'
+  const editingPromptWithStatus = editingPrompt
+    ? prompts.find((prompt) => prompt.id === editingPrompt.id) || editingPrompt
+    : null
 
   const loadData = useCallback(async () => {
     try {
@@ -143,6 +155,42 @@ export default function PromptManager() {
     }
   }
 
+  const handleLoadPromptSample = async () => {
+    if (!editingPrompt) return
+    if (!confirm(t('prompts.confirmLoadPromptSample'))) return
+    try {
+      const res = await promptsApi.loadSample(editingPrompt.id)
+      const updated = res.data
+      setEditingPrompt(updated)
+      setFormData({
+        name: updated.name,
+        prompt_type: updated.prompt_type,
+        document_type_filter: updated.document_type_filter || '',
+        system_prompt: updated.system_prompt,
+        user_template: updated.user_template,
+        is_active: updated.is_active,
+      })
+      loadData()
+    } catch (error) {
+      console.error('Failed to load prompt sample:', error)
+    }
+  }
+
+  const getSampleStatusClass = (status?: SampleStatus) => {
+    switch (status) {
+      case 'sample_current':
+        return 'bg-green-100 text-green-800'
+      case 'sample_update_available':
+        return 'bg-amber-100 text-amber-800'
+      case 'modified':
+        return 'bg-blue-100 text-blue-800'
+      case 'legacy_sample':
+        return 'bg-yellow-100 text-yellow-800'
+      default:
+      return 'bg-gray-100 text-gray-700'
+    }
+  }
+
   const insertVariable = (variable: string, field: 'system' | 'user') => {
     const key = field === 'system' ? 'system_prompt' : 'user_template'
     setFormData({
@@ -206,6 +254,9 @@ export default function PromptManager() {
                 Trigger Tag
               </th>
               <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
+                {t('prompts.colSample')}
+              </th>
+              <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">
                 {t('prompts.colStatus')}
               </th>
               <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">
@@ -234,6 +285,17 @@ export default function PromptManager() {
                       <span className="text-gray-400">—</span>
                     )
                   })()}
+                </td>
+                <td
+                  className="py-3 px-4"
+                  title={t(`prompts.sampleStatusHelp.${prompt.sample_status || 'custom'}`)}
+                >
+                  <span
+                    className={`cursor-help px-2 py-1 rounded text-xs ${getSampleStatusClass(prompt.sample_status)}`}
+                    title={t(`prompts.sampleStatusHelp.${prompt.sample_status || 'custom'}`)}
+                  >
+                    {t(`prompts.sampleStatus.${prompt.sample_status || 'custom'}`)}
+                  </span>
                 </td>
                 <td className="py-3 px-4">
                   <span
@@ -394,6 +456,16 @@ export default function PromptManager() {
               </div>
 
               <div className="flex justify-end gap-2 pt-4 border-t">
+                {editingPromptWithStatus?.sample_status
+                  && editingPromptWithStatus.sample_status !== 'custom' && (
+                  <button
+                    type="button"
+                    onClick={handleLoadPromptSample}
+                    className="px-3 py-2 text-sm border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                  >
+                    {t('prompts.loadPromptSample')}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}

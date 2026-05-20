@@ -181,6 +181,7 @@
     "colName": "Name",
     "colType": "Type",
     "colTypeFilter": "Type Filter",
+    "colSample": "Sample",
     "colStatus": "Status",
     "colActions": "Actions",
     "active": "Active",
@@ -199,7 +200,23 @@
     "create": "Create",
     "confirmDelete": "Are you sure you want to delete this prompt?",
     "confirmLoadSamples": "This will reset all sample prompts to their defaults. Custom prompts are not affected.",
+    "confirmLoadPromptSample": "Replace this prompt with the bundled sample?",
     "samplesLoaded": "Loaded: {{created}} created, {{updated}} updated",
+    "loadPromptSample": "Load sample prompt",
+    "sampleStatus": {
+      "custom": "Custom",
+      "sample_current": "Sample current",
+      "sample_update_available": "Sample update",
+      "modified": "Modified",
+      "legacy_sample": "Legacy sample"
+    },
+    "sampleStatusHelp": {
+      "custom": "no bundled sample",
+      "sample_current": "matches current sample",
+      "sample_update_available": "new sample available",
+      "modified": "locally edited",
+      "legacy_sample": "from an older release"
+    },
     "promptTypes": {
       "date": "Date detection"
     }

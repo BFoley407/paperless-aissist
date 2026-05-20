@@ -66,6 +66,7 @@ export const promptsApi = {
   delete: (id: number) => api.delete(`/prompts/${id}`),
   getTemplates: () => api.get('/prompts/templates'),
   loadSamples: () => api.post('/prompts/load-samples'),
+  loadSample: (id: number) => api.post(`/prompts/${id}/load-sample`),
 }
 
 /** Document processing and chat API methods. */
