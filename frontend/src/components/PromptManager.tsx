@@ -159,9 +159,8 @@ export default function PromptManager() {
     if (!editingPrompt) return
     if (!confirm(t('prompts.confirmLoadPromptSample'))) return
     try {
-      const res = await promptsApi.loadSample(editingPrompt.id)
+      const res = await promptsApi.getSample(editingPrompt.id)
       const updated = res.data
-      setEditingPrompt(updated)
       setFormData({
         name: updated.name,
         prompt_type: updated.prompt_type,
@@ -170,7 +169,6 @@ export default function PromptManager() {
         user_template: updated.user_template,
         is_active: updated.is_active,
       })
-      loadData()
     } catch (error) {
       console.error('Failed to load prompt sample:', error)
     }
@@ -187,7 +185,7 @@ export default function PromptManager() {
       case 'legacy_sample':
         return 'bg-yellow-100 text-yellow-800'
       default:
-      return 'bg-gray-100 text-gray-700'
+        return 'bg-gray-100 text-gray-700'
     }
   }
 

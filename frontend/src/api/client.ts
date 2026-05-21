@@ -67,6 +67,7 @@ export const promptsApi = {
   getTemplates: () => api.get('/prompts/templates'),
   loadSamples: () => api.post('/prompts/load-samples'),
   loadSample: (id: number) => api.post(`/prompts/${id}/load-sample`),
+  getSample: (id: number) => api.get(`/prompts/${id}/sample`),
 }
 
 /** Document processing and chat API methods. */

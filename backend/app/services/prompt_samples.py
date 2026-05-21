@@ -18,6 +18,13 @@ SAMPLE_FIELDS = (
     "user_template",
     "is_active",
 )
+SAMPLE_STATUS_FIELDS = (
+    "name",
+    "prompt_type",
+    "document_type_filter",
+    "system_prompt",
+    "user_template",
+)
 
 
 def examples_dir() -> Path:
@@ -29,12 +36,20 @@ def sample_key_for_file(path: Path) -> str:
 
 
 def sample_payload(sample: dict) -> dict:
-    return {field: sample.get(field) for field in SAMPLE_FIELDS}
+    return {field: normalize_prompt_value(field, sample.get(field)) for field in SAMPLE_FIELDS}
+
+
+def normalize_prompt_value(field: str, value):
+    if field == "document_type_filter" and value == "":
+        return None
+    if field in {"system_prompt", "user_template"} and isinstance(value, str):
+        return "\n".join(line.rstrip() for line in value.replace("\r\n", "\n").replace("\r", "\n").split("\n"))
+    return value
 
 
 def sample_hash(sample: dict) -> str:
     encoded = json.dumps(
-        sample_payload(sample),
+        {field: normalize_prompt_value(field, sample.get(field)) for field in SAMPLE_STATUS_FIELDS},
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -63,7 +78,10 @@ def find_sample_for_prompt(prompt: Prompt, samples: dict[str, dict]) -> dict | N
 
 
 def prompt_payload(prompt: Prompt) -> dict:
-    return {field: getattr(prompt, field) for field in SAMPLE_FIELDS}
+    return {
+        field: normalize_prompt_value(field, getattr(prompt, field))
+        for field in SAMPLE_STATUS_FIELDS
+    }
 
 
 def prompt_hash(prompt: Prompt) -> str:

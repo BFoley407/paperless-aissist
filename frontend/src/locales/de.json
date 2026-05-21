@@ -208,14 +208,14 @@
       "sample_current": "Beispiel aktuell",
       "sample_update_available": "Beispiel Update",
       "modified": "Geändert",
-      "legacy_sample": "Beispiel alt"
+      "legacy_sample": "Nicht verfolgt"
     },
     "sampleStatusHelp": {
       "custom": "kein mitgeliefertes Beispiel",
       "sample_current": "entspricht dem aktuellen Beispiel",
       "sample_update_available": "neues Beispiel verfügbar",
       "modified": "lokal angepasst",
-      "legacy_sample": "aus älterem Stand"
+      "legacy_sample": "vor dem Sample-Tracking erstellt oder vorher manuell geändert"
     },
     "promptTypes": {
       "date": "Datumserkennung"

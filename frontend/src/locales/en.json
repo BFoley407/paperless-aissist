@@ -208,14 +208,14 @@
       "sample_current": "Sample current",
       "sample_update_available": "Sample update",
       "modified": "Modified",
-      "legacy_sample": "Legacy sample"
+      "legacy_sample": "Untracked"
     },
     "sampleStatusHelp": {
       "custom": "no bundled sample",
       "sample_current": "matches current sample",
       "sample_update_available": "new sample available",
       "modified": "locally edited",
-      "legacy_sample": "from an older release"
+      "legacy_sample": "created before sample tracking or changed before tracking was available"
     },
     "promptTypes": {
       "date": "Date detection"
