@@ -63,4 +63,21 @@ describe('ConfigPanel', () => {
       expect(mocks.mockSet).toHaveBeenCalledWith('document_list_refresh_mode', 'manual')
     })
   })
+
+  it('renders and saves vision PDF input mode', async () => {
+    render(<ConfigPanel />)
+
+    fireEvent.click(await screen.findByText('config.tabLLM'))
+    const pdfMode = await screen.findByLabelText('config.visionPdfMode')
+
+    expect(pdfMode).toHaveValue('auto')
+    expect(screen.getByText('config.visionPdfModeAuto')).toBeInTheDocument()
+
+    fireEvent.change(pdfMode, { target: { value: 'page_images' } })
+    fireEvent.click(screen.getByText('config.saveConfiguration'))
+
+    await waitFor(() => {
+      expect(mocks.mockSet).toHaveBeenCalledWith('vision_pdf_mode', 'page_images')
+    })
+  })
 })

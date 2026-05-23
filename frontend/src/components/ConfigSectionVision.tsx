@@ -75,6 +75,22 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
           />
         </div>
         <div>
+          <label htmlFor="vision-pdf-mode" className={labelClass}>
+            {t('config.visionPdfMode')}
+          </label>
+          <select
+            id="vision-pdf-mode"
+            value={config.vision_pdf_mode || 'auto'}
+            onChange={(e) => handleChange('vision_pdf_mode', e.target.value)}
+            className={fieldClass}
+          >
+            <option value="auto">{t('config.visionPdfModeAuto')}</option>
+            <option value="native_pdf">{t('config.visionPdfModeNative')}</option>
+            <option value="page_images">{t('config.visionPdfModeImages')}</option>
+          </select>
+          <p className={hintClass}>{t('config.visionPdfModeHelp')}</p>
+        </div>
+        <div>
           <label className={labelClass}>
             {t('config.apiKey')}{' '}
             <span className="font-normal text-gray-400">({t('common.optional')})</span>

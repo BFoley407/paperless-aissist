@@ -127,8 +127,14 @@ The provider is selected per-model in Settings. Ollama runs locally; OpenAI and 
 |----------|-------|-------|
 | Ollama | `benhaotang/Nanonets-OCR-s:latest` | Recommended local — best OCR accuracy |
 | Ollama | `qwen2.5vl:7b` | Good text extraction |
-| OpenAI | `gpt-4o` | Sends PDF natively — all pages at once |
+| OpenAI | `gpt-4o` | Supports native PDF with the official OpenAI API |
 | Grok | `grok-2-vision-1212` | xAI vision alternative |
+
+### Vision PDF input mode
+
+For the official OpenAI API, Paperless-AIssist can send PDFs natively. For local OpenAI-compatible runtimes such as LM Studio, vLLM, llama.cpp, oMLX, or Ollama's OpenAI-compatible endpoint, use **Page images** so each PDF page is rendered locally and sent as an image input.
+
+The default **Auto** mode uses native PDF for `api.openai.com` and page images for other OpenAI-compatible API bases.
 
 Pull Ollama models before use:
 ```bash

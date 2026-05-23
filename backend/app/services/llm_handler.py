@@ -373,7 +373,49 @@ class LLMHandler:
         url = "/chat/completions"
         logger.info(f"OpenAI Vision calling: {url}, model: {self.model}")
 
-        if pdf_bytes:
+        try:
+            if not pdf_bytes:
+                logger.info(
+                    f"OpenAI Vision: sending JPEG images page-by-page ({len(images)} page(s))"
+                )
+                combined_text = []
+                for img in images:
+                    img_b64 = base64.b64encode(img).decode("utf-8")
+                    content = []
+                    if user_prompt:
+                        content.append({"type": "text", "text": user_prompt})
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        }
+                    )
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": content},
+                    ]
+                    payload: dict[str, Any] = {
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                    }
+                    if json_mode:
+                        payload["response_format"] = {"type": "json_object"}
+
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    content_text = data["choices"][0]["message"]["content"].strip()
+                    combined_text.append(content_text)
+
+                full_text = "\n\n".join(combined_text)
+                if json_mode:
+                    try:
+                        return json.loads(full_text)
+                    except json.JSONDecodeError:
+                        return {"raw": full_text}
+                return {"text": full_text}
+
             logger.info("OpenAI Vision: sending PDF natively (all pages)")
             pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
             content: list[dict] = [
@@ -387,37 +429,21 @@ class LLMHandler:
             ]
             if user_prompt:
                 content.append({"type": "text", "text": user_prompt})
-        else:
-            logger.info(
-                f"OpenAI Vision: sending JPEG images (all {len(images)} page(s))"
-            )
-            content = []
-            if user_prompt:
-                content.append({"type": "text", "text": user_prompt})
-            for img in images:
-                img_b64 = base64.b64encode(img).decode("utf-8")
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-                    }
-                )
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
-        ]
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ]
 
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+            }
 
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
 
-        try:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()

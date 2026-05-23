@@ -41,6 +41,7 @@ export default function ConfigPanel() {
     llm_provider_vision: 'ollama',
     llm_model_vision: 'qwen2.5vl:7b',
     llm_api_base_vision: 'http://localhost:11434',
+    vision_pdf_mode: 'auto',
     llm_timeout: '600',
     llm_timeout_vision: '600',
     log_level: 'INFO',
