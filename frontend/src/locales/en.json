@@ -156,6 +156,8 @@
     "documentListRefreshAutomatic": "Automatic",
     "documentListRefreshManual": "Manual",
     "documentListRefreshModeHint": "Controls whether Process and Chat load document lists automatically or only after pressing Refresh.",
+    "ocrFixMaxChars": "OCR Fix Max Chars",
+    "ocrFixMaxCharsHint": "OCR fix is skipped above this length to avoid replacing long document text with a shortened LLM result.",
     "tabServer": "Server",
     "tabLLM": "LLM/Vision",
     "tabVision": "Vision",

@@ -45,6 +45,7 @@ export default function ConfigPanel() {
     llm_timeout: '600',
     llm_timeout_vision: '600',
     log_level: 'INFO',
+    ocr_fix_max_chars: '10000',
     document_list_refresh_mode: 'automatic',
     modular_tag_process: '',
     modular_tag_ocr: '',

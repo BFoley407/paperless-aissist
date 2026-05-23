@@ -178,6 +178,11 @@ Common combinations:
 | `ai-ocr` + `ai-date` | Vision OCR first, then document date detection |
 | `ai-ocr` + `ai-ocr-fix` + `ai-process` | Vision OCR, OCR correction, then the standard metadata pipeline |
 
+OCR correction is guarded for long documents. If the document text is longer than **OCR Fix Max Chars**
+(default `10000`), the `ai-ocr-fix` step is skipped and the original document text is kept. This
+prevents a shortened LLM result from replacing full multi-page OCR output. The limit can be changed in
+**Settings → Advanced** or with the optional `OCR_FIX_MAX_CHARS` environment variable.
+
 Legacy override tags `force_ocr` and `force-ocr-fix` are still supported for compatibility. For new workflows, prefer `ai-ocr` and `ai-ocr-fix`.
 
 > **Note on `ai-fields` + type-specific prompts:** When `ai-fields` runs without `ai-document-type`, the processor reads the document's current document type from Paperless and uses it to match any active `type_specific` prompts. You do not need to add `ai-document-type` just to get type-specific field extraction to work.

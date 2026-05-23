@@ -156,6 +156,8 @@
     "documentListRefreshAutomatic": "Automatisch",
     "documentListRefreshManual": "Manuell",
     "documentListRefreshModeHint": "Steuert, ob Verarbeiten und Chat Dokumentlisten automatisch oder erst nach Aktualisieren laden.",
+    "ocrFixMaxChars": "OCR-Korrektur Max. Zeichen",
+    "ocrFixMaxCharsHint": "Die OCR-Korrektur wird oberhalb dieser Länge übersprungen, damit langer Dokumenttext nicht durch ein gekürztes KI-Ergebnis ersetzt wird.",
     "tabServer": "Server",
     "tabLLM": "LLM/Vision",
     "tabVision": "Vision",

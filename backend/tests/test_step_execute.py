@@ -10,6 +10,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 # Imports for tasks
 from app.services.steps.ocr_step import OCRStep
+from app.services.steps.ocr_fix_step import OCRFixStep
 from app.services.steps.title_step import TitleStep
 from app.services.steps.correspondent_step import CorrespondentStep
 from app.services.steps.document_type_step import DocumentTypeStep
@@ -126,6 +127,84 @@ class TestOCRStep:
         step = OCRStep(ctx.config)
 
         assert step.can_handle(ctx.trigger_tags) is True
+
+
+class TestOCRFixStep:
+    @pytest.fixture
+    def ctx(self, mock_paperless, mock_llm):
+        return StepContext(
+            doc_id=1,
+            paperless=mock_paperless,
+            llm=mock_llm,
+            config={
+                "ocr_post_process": "true",
+                "ocr_fix_max_chars": "10000",
+                "modular_tag_ocr_fix": "ai-ocr-fix",
+                "force_ocr_tag": "force_ocr",
+                "force_ocr_fix_tag": "force-ocr-fix",
+            },
+            trigger_tags={"ai-ocr-fix"},
+            ocr_text="x" * 10001,
+        )
+
+    @pytest.mark.asyncio
+    async def test_skips_large_text_without_overwriting_content(self, ctx, mock_llm):
+        mock_llm.complete = AsyncMock(return_value={"text": "shortened", "raw": ""})
+
+        step = await OCRFixStep.from_config(ctx.config)
+        result = await step.execute(ctx)
+        await step.update_metadata(ctx, result)
+
+        assert result.skipped is True
+        assert result.data == {}
+        assert result.details == {
+            "reason": "content_too_large",
+            "content_length": 10001,
+            "max_chars": 10000,
+        }
+        assert ctx.ocr_text == "x" * 10001
+        mock_llm.complete.assert_not_called()
+        ctx.paperless.update_document.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fixes_text_within_limit_and_updates_content(self, ctx, mock_llm):
+        ctx.ocr_text = "Th1s OCR text needs f1xing."
+        mock_prompt = MagicMock(spec=Prompt)
+        mock_prompt.system_prompt = "Fix OCR."
+        mock_prompt.user_template = "OCR Text:\n{content}"
+        mock_session = AsyncMock()
+        mock_session.exec = AsyncMock(
+            return_value=MagicMock(first=MagicMock(return_value=mock_prompt))
+        )
+        mock_llm.complete = AsyncMock(
+            return_value={"text": "This OCR text needs fixing.", "raw": ""}
+        )
+
+        with patch("app.database.get_async_session") as mock_get_session:
+            mock_get_session.return_value.__aenter__.return_value = mock_session
+            step = await OCRFixStep.from_config(ctx.config)
+            result = await step.execute(ctx)
+            await step.update_metadata(ctx, result)
+
+        assert result.skipped is False
+        assert result.data == {"text": "This OCR text needs fixing."}
+        assert ctx.ocr_text == "This OCR text needs fixing."
+        mock_llm.complete.assert_awaited_once_with(
+            system_prompt="Fix OCR.",
+            user_prompt="OCR Text:\nTh1s OCR text needs f1xing.",
+            json_mode=False,
+        )
+        ctx.paperless.update_document.assert_awaited_once_with(
+            1,
+            content="This OCR text needs fixing.",
+        )
+
+    def test_max_chars_can_be_set_from_environment(self, monkeypatch):
+        monkeypatch.setenv("OCR_FIX_MAX_CHARS", "12345")
+
+        step = OCRFixStep({})
+
+        assert step.ocr_fix_max_chars == 12345
 
 
 @patch("app.database.get_async_session")

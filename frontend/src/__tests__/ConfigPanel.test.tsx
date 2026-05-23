@@ -80,4 +80,20 @@ describe('ConfigPanel', () => {
       expect(mocks.mockSet).toHaveBeenCalledWith('vision_pdf_mode', 'page_images')
     })
   })
+
+  it('renders and saves OCR fix max chars', async () => {
+    render(<ConfigPanel />)
+
+    fireEvent.click(await screen.findByText('config.tabAdvanced'))
+    const maxChars = await screen.findByLabelText('config.ocrFixMaxChars')
+
+    expect(maxChars).toHaveValue(10000)
+
+    fireEvent.change(maxChars, { target: { value: '20000' } })
+    fireEvent.click(screen.getByText('config.saveConfiguration'))
+
+    await waitFor(() => {
+      expect(mocks.mockSet).toHaveBeenCalledWith('ocr_fix_max_chars', '20000')
+    })
+  })
 })
