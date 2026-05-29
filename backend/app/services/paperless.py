@@ -88,8 +88,15 @@ class PaperlessClient:
         response.raise_for_status()
         return response.json()
 
-    async def get_document_file(self, doc_id: int) -> bytes:
+    async def get_document_file(self, doc_id: int, original: bool = False) -> bytes:
+        """Fetch a document file from Paperless.
+
+        By default this keeps Paperless' normal download behavior. Set
+        original=True for callers that explicitly need the uploaded source file.
+        """
         url = f"{self.base_url}/api/documents/{doc_id}/download/"
+        if original:
+            url += "?original=true"
         logger.debug(f"GET {url}")
         self._request_count += 1
         response = await self.client.get(url, headers=self._get_headers())

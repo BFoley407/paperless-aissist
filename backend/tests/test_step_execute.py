@@ -77,7 +77,7 @@ class TestOCRStep:
             step = await OCRStep.from_config(ctx.config)
             result = await step.execute(ctx)
 
-        mock_paperless.get_document_file.assert_awaited_once_with(1)
+        mock_paperless.get_document_file.assert_awaited_once_with(1, original=True)
         vision_pipeline.extract_text_from_pdf.assert_awaited_once_with(
             b"fake pdf bytes", prompt=None
         )
