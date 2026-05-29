@@ -13,12 +13,17 @@ from ..exceptions import LLMUnavailableError
 
 logger = logging.getLogger(__name__)
 
+OPENAI_COMPATIBLE_PROVIDERS = frozenset({"openai", "grok", "openrouter"})
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+OPENROUTER_REFERER = "https://github.com/nyxtron/paperless-aissist"
+OPENROUTER_TITLE = "Paperless-AIssist"
+
 
 class LLMHandler:
     """HTTP client for LLM inference via Ollama or OpenAI-compatible APIs.
 
     Attributes:
-        provider: "ollama", "openai", or "grok".
+        provider: "ollama", "openai", "grok", or "openrouter".
         model: Model name passed to the API.
         api_base: Base URL for the API endpoint.
         api_key: Optional API key for authenticated endpoints.
@@ -47,6 +52,9 @@ class LLMHandler:
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
+            if self.provider == "openrouter":
+                headers["HTTP-Referer"] = OPENROUTER_REFERER
+                headers["X-OpenRouter-Title"] = OPENROUTER_TITLE
             self._client = httpx.AsyncClient(
                 base_url=self.api_base,
                 timeout=self.timeout,
@@ -92,7 +100,12 @@ class LLMHandler:
         if not provider:
             provider = "ollama"
         if not model:
-            model = "llama3" if not for_vision else "llava"
+            if provider == "openrouter":
+                model = "openai/gpt-4o" if for_vision else "openai/gpt-4o-mini"
+            else:
+                model = "llama3" if not for_vision else "llava"
+        if provider == "openrouter" and not api_base:
+            api_base = OPENROUTER_API_BASE
 
         timeout_str = await cls._get_config(f"llm_timeout{suffix}")
         if for_vision and not timeout_str:
@@ -138,7 +151,7 @@ class LLMHandler:
             return await self._ollama_complete(
                 system_prompt, user_prompt, json_mode, temperature
             )
-        elif self.provider in ("openai", "grok"):
+        elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_complete(
                 system_prompt, user_prompt, json_mode, temperature
             )
@@ -278,7 +291,7 @@ class LLMHandler:
             return await self._ollama_vision_complete(
                 system_prompt, user_prompt, images, json_mode, temperature
             )
-        elif self.provider in ("openai", "grok"):
+        elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_vision_complete(
                 system_prompt,
                 user_prompt,

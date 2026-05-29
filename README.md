@@ -2,14 +2,14 @@
 
 AI-powered document processing middleware for [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx).
 
-Tag a document with `ai-process` and it gets automatically classified, titled, tagged, and enriched with custom fields. Works with [Ollama](https://ollama.ai) (local), [OpenAI](https://openai.com), and [Grok (xAI)](https://x.ai).
+Tag a document with `ai-process` and it gets automatically classified, titled, tagged, and enriched with custom fields. Works with [Ollama](https://ollama.ai) (local), [OpenAI](https://openai.com), [Grok (xAI)](https://x.ai), and [OpenRouter](https://openrouter.ai).
 
 ## Features
 
 - **Correspondent, document type & tag classification** — LLM picks from your existing Paperless metadata
 - **Title generation** — replaces scanned filenames with meaningful titles
 - **Custom field extraction** — pulls structured data into Paperless custom fields
-- **Vision OCR** — uses vision models (Ollama, OpenAI, Grok) to read documents directly from page images
+- **Vision OCR** — uses vision models (Ollama, OpenAI, Grok, OpenRouter) to read documents directly from page images
 - **OCR post-processing** — LLM corrects OCR errors before classification
 - **Document date detection** — updates the Paperless document date when a reliable original date is found
 - **Document chat** — ask questions about any document via the web UI
@@ -100,13 +100,14 @@ volumes:
 
 ## LLM Providers
 
-The provider is selected per-model in Settings. Ollama runs locally; OpenAI and Grok require an API key. The vision model can use a different provider than the main LLM — configure it separately via `llm_provider_vision` and `llm_api_key_vision` (e.g. main = Ollama, vision = OpenAI).
+The provider is selected per-model in Settings. Ollama runs locally; OpenAI, Grok, and OpenRouter require an API key. The vision model can use a different provider than the main LLM — configure it separately via `llm_provider_vision` and `llm_api_key_vision` (e.g. main = Ollama, vision = OpenAI).
 
 | Provider | API Base URL | Notes |
 |----------|-------------|-------|
 | Ollama | `http://localhost:11434` | Local — no API key needed |
 | OpenAI | `https://api.openai.com/v1` | Requires API key |
 | Grok (xAI) | `https://api.x.ai/v1` | Requires API key |
+| OpenRouter | `https://openrouter.ai/api/v1` | Requires API key; use provider/model names |
 
 > OpenAI-compatible endpoints (e.g. LM Studio, vLLM) also work — set the provider to `openai` and point the URL at your local server.
 
@@ -120,6 +121,7 @@ The provider is selected per-model in Settings. Ollama runs locally; OpenAI and 
 | Ollama | `qwen2.5:7b` | Lighter option for slower hardware |
 | OpenAI | `gpt-4o-mini` | Fast and cost-effective |
 | Grok | `grok-3-mini` | xAI alternative |
+| OpenRouter | `openai/gpt-4o-mini` | OpenRouter model namespace |
 
 ### Vision (OCR)
 
@@ -129,6 +131,7 @@ The provider is selected per-model in Settings. Ollama runs locally; OpenAI and 
 | Ollama | `qwen2.5vl:7b` | Good text extraction |
 | OpenAI | `gpt-4o` | Supports native PDF with the official OpenAI API |
 | Grok | `grok-2-vision-1212` | xAI vision alternative |
+| OpenRouter | `openai/gpt-4o` | Uses page images for portable vision input |
 
 ### Vision PDF input mode
 

@@ -186,6 +186,32 @@ def test_scheduler_status_endpoint(client):
     assert "interval_minutes" in data or "interval" in data
 
 
+def test_openrouter_connection_test_uses_openai_compatible_probe(client, monkeypatch):
+    openai_probe = AsyncMock(
+        return_value={"success": True, "message": "Connected!", "models": ["test"]}
+    )
+    ollama_probe = AsyncMock(
+        return_value={"success": False, "message": "Unexpected Ollama call"}
+    )
+    monkeypatch.setattr("app.routers.config.test_openai_url", openai_probe)
+    monkeypatch.setattr("app.routers.config.test_ollama_url", ollama_probe)
+
+    client.post("/api/config", json={"key": "llm_provider", "value": "openrouter"})
+    client.post(
+        "/api/config",
+        json={"key": "llm_api_base", "value": "https://openrouter.ai/api/v1"},
+    )
+    client.post("/api/config", json={"key": "llm_api_key", "value": "sk-test"})
+    client.post("/api/config", json={"key": "enable_vision", "value": "false"})
+
+    response = client.post("/api/config/test-ollama")
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    openai_probe.assert_awaited_once_with("https://openrouter.ai/api/v1", "sk-test")
+    ollama_probe.assert_not_awaited()
+
+
 def test_stats_log_stream_asyncio_imported(client):
     """Verify asyncio is imported in stats.py so event_gen does not NameError."""
     import ast
