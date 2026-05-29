@@ -56,7 +56,9 @@ async def test_openrouter_text_completion_uses_openai_compatible_path():
     result = await handler.complete("system", "user", json_mode=False)
 
     assert result == {"text": "ok"}
-    handler._openai_complete.assert_awaited_once_with("system", "user", False, 0.3)
+    handler._openai_complete.assert_awaited_once_with(
+        "system", "user", False, 0.3, None
+    )
 
 
 @pytest.mark.asyncio

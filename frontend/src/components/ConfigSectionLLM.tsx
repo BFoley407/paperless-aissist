@@ -166,6 +166,32 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
           />
           <p className={hintClass}>{t('config.llmTimeoutHint')}</p>
         </div>
+        <div>
+          <label className={labelClass}>{t('config.llmTemperature')}</label>
+          <input
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.llm_temperature || '0.3'}
+            onChange={(e) => handleChange('llm_temperature', e.target.value)}
+            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmTemperatureHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmMaxTokens')}</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={config.llm_max_tokens || ''}
+            onChange={(e) => handleChange('llm_max_tokens', e.target.value)}
+            placeholder="4096"
+            className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmMaxTokensHint')}</p>
+        </div>
       </div>
     </div>
   )

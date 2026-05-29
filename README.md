@@ -111,6 +111,13 @@ The provider is selected per-model in Settings. Ollama runs locally; OpenAI, Gro
 
 > OpenAI-compatible endpoints (e.g. LM Studio, vLLM) also work — set the provider to `openai` and point the URL at your local server.
 
+### Generation controls
+
+The main LLM and Vision OCR model each have their own generation settings:
+
+- **Temperature** controls randomness. Lower values are more deterministic; `0.0`–`0.3` is recommended for document metadata and OCR.
+- **Max Output Tokens** optionally limits response length. Leave it empty to use the provider default. For Ollama, this is sent as `num_predict`; for OpenAI-compatible providers it is sent as `max_tokens`.
+
 ## Recommended Models
 
 ### Text (LLM)

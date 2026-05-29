@@ -123,6 +123,32 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
           />
           <p className={hintClass}>{t('config.llmTimeoutVisionHint')}</p>
         </div>
+        <div>
+          <label className={labelClass}>{t('config.llmTemperatureVision')}</label>
+          <input
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.llm_temperature_vision || '0.3'}
+            onChange={(e) => handleChange('llm_temperature_vision', e.target.value)}
+            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmTemperatureVisionHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmMaxTokensVision')}</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={config.llm_max_tokens_vision || ''}
+            onChange={(e) => handleChange('llm_max_tokens_vision', e.target.value)}
+            placeholder="8192"
+            className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmMaxTokensVisionHint')}</p>
+        </div>
       </div>
     </div>
   )
