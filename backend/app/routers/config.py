@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Body
 from sqlmodel import select
 from typing import Optional
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel
 
@@ -227,6 +228,17 @@ async def set_config(data: ConfigUpdate = Body(...), description: Optional[str] 
     For sensitive keys (tokens, API keys), an empty/whitespace value is treated
     as a no-op: the existing value is preserved instead of being overwritten.
     """
+    if data.key == "paperless_url":
+        normalized = (data.value or "").strip().rstrip("/")
+        if normalized:
+            parsed = urlparse(normalized)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="paperless_url must start with http:// or https://",
+                )
+        data.value = normalized
+
     async with get_async_session() as session:
         stmt = select(Config).where(Config.key == data.key)
         config = await session.exec(stmt)

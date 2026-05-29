@@ -54,6 +54,51 @@ def test_config_sensitive_key_not_accessible(client):
         )
 
 
+def test_paperless_url_trailing_slash_is_stripped(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": "  http://paperless.local///  "},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://paperless.local"
+
+    response = client.get("/api/config/paperless_url")
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://paperless.local"
+
+
+def test_paperless_url_without_scheme_is_rejected(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": "paperless.local"},
+    )
+
+    assert response.status_code == 400
+    assert "http:// or https://" in response.json()["detail"]
+
+
+def test_paperless_url_empty_value_is_allowed(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": ""},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == ""
+
+
+def test_other_config_keys_are_not_normalized(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "llm_api_base", "value": "http://localhost:11434/"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://localhost:11434/"
+
+
 def test_stats_endpoints(client):
     """Stats endpoints return valid data."""
     from app.database import get_session
