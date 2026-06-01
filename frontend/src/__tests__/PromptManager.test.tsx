@@ -17,13 +17,30 @@ i18n.use(initReactI18next).init({
           colName: 'Name',
           colType: 'Type',
           colTypeFilter: 'Type Filter',
+          colSample: 'Sample',
           colStatus: 'Status',
           colActions: 'Actions',
           active: 'Active',
           inactive: 'Inactive',
           confirmDelete: 'Are you sure?',
           confirmLoadSamples: 'Load sample prompts?',
+          confirmLoadPromptSample: 'Replace this prompt with the bundled sample?',
           samplesLoaded: 'Samples loaded',
+          loadPromptSample: 'Load sample prompt',
+          sampleStatus: {
+            custom: 'Custom',
+            sample_current: 'Sample current',
+            sample_update_available: 'Sample update',
+            modified: 'Modified',
+            legacy_sample: 'Untracked',
+          },
+          sampleStatusHelp: {
+            custom: 'no bundled sample',
+            sample_current: 'matches current sample',
+            sample_update_available: 'new sample available',
+            modified: 'locally edited',
+            legacy_sample: 'created before sample tracking or changed before tracking was available',
+          },
           editPrompt: 'Edit Prompt',
           createPrompt: 'Create Prompt',
           labelName: 'Name',
@@ -49,9 +66,10 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 })
 
-const { mockGet, mockPost } = vi.hoisted(() => ({
+const { mockGet, mockPost, mockPut } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockPost: vi.fn(),
+  mockPut: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -74,8 +92,10 @@ vi.mock('../api/client', () => ({
     getTemplates: mockGet,
     loadSamples: mockPost,
     create: mockPost,
-    update: mockPost,
+    update: mockPut,
     delete: mockPost,
+    loadSample: mockPost,
+    getSample: mockGet,
   },
 }))
 
@@ -151,12 +171,23 @@ describe('getTriggerTag', () => {
     expect(getTriggerTag('vision_ocr', {})).toBe('ai-ocr')
     expect(getTriggerTag('ocr_fix', {})).toBe('ai-ocr-fix')
   })
+
+  it('returns date trigger tag default when config key is not present', () => {
+    expect(getTriggerTag('date', {})).toBe('ai-date')
+  })
+
+  it('returns configured date trigger tag when modular tag is present', () => {
+    expect(getTriggerTag('date', { modular_tag_date: 'detect-document-date' })).toBe(
+      'detect-document-date',
+    )
+  })
 })
 
 describe('PromptManager Component', () => {
   beforeEach(() => {
     mockGet.mockReset()
     mockPost.mockReset()
+    mockPut.mockReset()
   })
 
   it('renders prompt list after loading', async () => {
@@ -224,9 +255,113 @@ describe('PromptManager Component', () => {
     })
   })
 
+  it('shows date trigger tag for active date prompts', async () => {
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 12,
+            name: 'Detect Date',
+            prompt_type: 'date',
+            document_type_filter: null,
+            system_prompt: 'Detect document date',
+            user_template: 'Content: {{content}}',
+            is_active: true,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({ modular_tag_date: 'detect-document-date' }))
+
+    render(<PromptManager />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Detect Date')).toBeInTheDocument()
+      expect(screen.getByText('detect-document-date')).toBeInTheDocument()
+    })
+  })
+
+  it('shows sample status badges for prompts', async () => {
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 12,
+            name: 'Date Detection',
+            prompt_type: 'date',
+            document_type_filter: null,
+            system_prompt: 'Detect date',
+            user_template: 'Content',
+            is_active: true,
+            sample_key: 'date-detection',
+            sample_status: 'legacy_sample',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({}))
+
+    render(<PromptManager />)
+
+    expect(await screen.findByText('Date Detection')).toBeInTheDocument()
+    const status = screen.getByText('Untracked')
+    expect(status).toBeInTheDocument()
+    expect(status).toHaveAttribute(
+      'title',
+      'created before sample tracking or changed before tracking was available',
+    )
+  })
+
+  it('loads the bundled sample into the edit form without saving', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockGet
+      .mockResolvedValueOnce(
+        createMockResponse([
+          {
+            id: 12,
+            name: 'Date Detection',
+            prompt_type: 'date',
+            document_type_filter: null,
+            system_prompt: 'Old date prompt',
+            user_template: 'Old template',
+            is_active: true,
+            sample_key: 'date-detection',
+            sample_status: 'legacy_sample',
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(createMockResponse(mockTemplates))
+      .mockResolvedValueOnce(createMockResponse({}))
+      .mockResolvedValueOnce(
+        createMockResponse({
+          name: 'Date Detection',
+          prompt_type: 'date',
+          document_type_filter: null,
+          system_prompt: 'New bundled date prompt',
+          user_template: 'Current date: {current_date}',
+          is_active: true,
+          sample_key: 'date-detection',
+        }),
+      )
+
+    const { container } = render(<PromptManager />)
+
+    await screen.findByText('Date Detection')
+    const editButton = container.querySelector('tbody button')
+    await user.click(editButton as HTMLButtonElement)
+    await user.click(screen.getByRole('button', { name: /load sample prompt/i }))
+
+    expect(mockGet).toHaveBeenLastCalledWith(12)
+    expect(mockPost).not.toHaveBeenCalledWith(12)
+    expect(mockPut).not.toHaveBeenCalled()
+    expect(screen.getByDisplayValue('New bundled date prompt')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Current date: {current_date}')).toBeInTheDocument()
+  })
+
   it('allows saving a Vision OCR prompt with an empty user template', async () => {
     const user = userEvent.setup()
-    mockPost.mockResolvedValue(createMockResponse({}))
+    mockPut.mockResolvedValue(createMockResponse({}))
     mockGet
       .mockResolvedValueOnce(
         createMockResponse([
@@ -260,7 +395,7 @@ describe('PromptManager Component', () => {
     await user.click(screen.getByRole('button', { name: /update/i }))
 
     await waitFor(() => {
-      expect(mockPost).toHaveBeenCalledWith(10, {
+      expect(mockPut).toHaveBeenCalledWith(10, {
         name: 'Vision OCR',
         prompt_type: 'vision_ocr',
         document_type_filter: '',

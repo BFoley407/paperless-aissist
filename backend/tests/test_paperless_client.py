@@ -21,6 +21,13 @@ def make_response(results, next_url=None):
     return response
 
 
+def make_binary_response(content=b"pdf bytes"):
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.content = content
+    return response
+
+
 @pytest.mark.parametrize(
     ("method_name", "path"),
     [
@@ -81,5 +88,48 @@ async def test_metadata_collection_force_refresh_fetches_and_replaces_cache():
     await client.close()
 
 
+@pytest.mark.asyncio
+async def test_get_document_file_uses_paperless_default_download_by_default():
+    client = PaperlessClient(base_url=BASE_URL, token="token")
+    client.client.get = AsyncMock(return_value=make_binary_response(b"archive pdf"))
+
+    content = await client.get_document_file(42)
+
+    assert content == b"archive pdf"
+    requested_url = client.client.get.call_args.args[0]
+    assert requested_url == f"{BASE_URL}/api/documents/42/download/"
+
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_document_file_can_request_original_document():
+    client = PaperlessClient(base_url=BASE_URL, token="token")
+    client.client.get = AsyncMock(return_value=make_binary_response(b"original pdf"))
+
+    content = await client.get_document_file(42, original=True)
+
+    assert content == b"original pdf"
+    requested_url = client.client.get.call_args.args[0]
+    assert requested_url == f"{BASE_URL}/api/documents/42/download/?original=true"
+
+    await client.close()
+
+
 def test_metadata_cache_ttl_is_one_hour():
     assert PAPERLESS_METADATA_CACHE_TTL == 3600
+
+
+@pytest.mark.asyncio
+async def test_update_document_maps_created_date_to_paperless_created_field():
+    client = PaperlessClient(base_url=BASE_URL, token="token")
+    response = MagicMock()
+    response.raise_for_status = MagicMock()
+    response.json.return_value = {"id": 1051, "created": "2026-04-28"}
+    client.client.patch = AsyncMock(return_value=response)
+
+    await client.update_document(1051, created_date="2026-04-28")
+
+    assert client.client.patch.await_args.kwargs["json"] == {"created": "2026-04-28"}
+
+    await client.close()

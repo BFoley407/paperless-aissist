@@ -33,6 +33,13 @@ interface ProcessingStep {
   status: string
   duration_ms: number
   error?: string
+  details?: {
+    created_date?: string | null
+    confidence?: string
+    evidence?: string
+    reason?: string
+    [key: string]: unknown
+  }
 }
 
 interface ProcessingResult {
@@ -228,6 +235,19 @@ export default function ProcessingPanel() {
     return `${(ms / 60000).toFixed(1)}m`
   }
 
+  const formatStepDetails = (step: ProcessingStep): string | null => {
+    const details = step.details
+    if (!details) return null
+
+    const parts: string[] = []
+    if (details.created_date) parts.push(`created_date: ${details.created_date}`)
+    if (details.confidence) parts.push(`confidence: ${details.confidence}`)
+    if (details.reason) parts.push(`reason: ${details.reason}`)
+    if (details.evidence) parts.push(`evidence: ${details.evidence}`)
+
+    return parts.length > 0 ? parts.join(' · ') : null
+  }
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'completed':
@@ -390,7 +410,7 @@ export default function ProcessingPanel() {
               {filteredSteps.map((step, index) => (
                 <div
                   key={index}
-                  className={`flex items-center justify-between px-3 py-2 rounded ${
+                  className={`flex items-start justify-between gap-3 px-3 py-2 rounded ${
                     step.status === 'completed'
                       ? 'bg-green-50'
                       : step.status === 'failed'
@@ -398,12 +418,21 @@ export default function ProcessingPanel() {
                         : 'bg-yellow-50'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    {getStatusIcon(step.status)}
-                    <span className="text-sm text-gray-700">{step.name}</span>
-                    {step.error && (
-                      <span className="text-xs text-red-600 ml-2">- {step.error}</span>
-                    )}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <div className="mt-0.5">{getStatusIcon(step.status)}</div>
+                    <div className="min-w-0">
+                      <div>
+                        <span className="text-sm text-gray-700">{step.name}</span>
+                        {step.error && (
+                          <span className="text-xs text-red-600 ml-2">- {step.error}</span>
+                        )}
+                      </div>
+                      {formatStepDetails(step) && (
+                        <p className="mt-1 text-xs text-gray-600 break-words">
+                          {formatStepDetails(step)}
+                        </p>
+                      )}
+                    </div>
                   </div>
                   <span className="text-xs text-gray-500">{formatDuration(step.duration_ms)}</span>
                 </div>

@@ -95,6 +95,11 @@
     "visionOcrHint": "Visionsmodell zur OCR-Erkennung von Dokumentseiten verwenden",
     "visionModelSection": "Vision-Modell Einstellungen",
     "visionModel": "Vision-Modell",
+    "visionPdfMode": "PDF-Eingabemodus",
+    "visionPdfModeAuto": "Automatisch",
+    "visionPdfModeNative": "Native PDF",
+    "visionPdfModeImages": "Seitenbilder",
+    "visionPdfModeHelp": "Nutze Seitenbilder für lokale OpenAI-kompatible Runtimes. Native PDF ist nur mit der offiziellen OpenAI API zuverlässig.",
     "visionSectionDisabledHint": "Vision OCR ist deaktiviert, kann hier aber bereits vorkonfiguriert werden.",
     "schedulerSection": "Automatische Verarbeitung",
     "schedulerRunning": "Aktiv",
@@ -120,6 +125,14 @@
     "llmTimeoutHint": "Maximale Wartezeit für LLM-/Vision-Antworten (30–3600 s). Erhöhen für langsame Modelle.",
     "llmTimeoutVision": "Vision-Timeout (Sekunden)",
     "llmTimeoutVisionHint": "Timeout für Vision-/OCR-Anfragen (30–3600 s). Im Zweifel bei 600 lassen.",
+    "llmTemperature": "Temperatur",
+    "llmTemperatureHint": "Niedrigere Werte sind deterministischer. Empfehlung: 0,0–0,3.",
+    "llmTemperatureVision": "Vision-Temperatur",
+    "llmTemperatureVisionHint": "Niedrigere Werte halten OCR deterministischer. Empfehlung: 0,0–0,3.",
+    "llmMaxTokens": "Max. Ausgabetokens",
+    "llmMaxTokensHint": "Optionale Antwortbegrenzung. Leer lassen für den Provider-Standard.",
+    "llmMaxTokensVision": "Vision max. Ausgabetokens",
+    "llmMaxTokensVisionHint": "Optionale OCR-Begrenzung pro Anfrage/Seite. Leer lassen für den Provider-Standard.",
     "modularSection": "Modulare Tag-Workflows",
     "modularSectionHint": "Passe die Paperless-Tag-Namen an, die die einzelnen Verarbeitungsschritte auslösen. Leer lassen für den Standardwert.",
     "modularTagProcess": "Vollständige Pipeline Tag",
@@ -151,6 +164,8 @@
     "documentListRefreshAutomatic": "Automatisch",
     "documentListRefreshManual": "Manuell",
     "documentListRefreshModeHint": "Steuert, ob Verarbeiten und Chat Dokumentlisten automatisch oder erst nach Aktualisieren laden.",
+    "ocrFixMaxChars": "OCR-Korrektur Max. Zeichen",
+    "ocrFixMaxCharsHint": "Die OCR-Korrektur wird oberhalb dieser Länge übersprungen, damit langer Dokumenttext nicht durch ein gekürztes KI-Ergebnis ersetzt wird.",
     "tabServer": "Server",
     "tabLLM": "LLM/Vision",
     "tabVision": "Vision",
@@ -181,6 +196,7 @@
     "colName": "Name",
     "colType": "Typ",
     "colTypeFilter": "Typ-Filter",
+    "colSample": "Beispiel",
     "colStatus": "Status",
     "colActions": "Aktionen",
     "active": "Aktiv",
@@ -199,7 +215,26 @@
     "create": "Erstellen",
     "confirmDelete": "Diesen Prompt wirklich löschen?",
     "confirmLoadSamples": "Alle Beispiel-Prompts werden auf die Standardwerte zurückgesetzt. Eigene Prompts sind nicht betroffen.",
-    "samplesLoaded": "Geladen: {{created}} erstellt, {{updated}} aktualisiert"
+    "confirmLoadPromptSample": "Diesen Prompt durch das mitgelieferte Beispiel ersetzen?",
+    "samplesLoaded": "Geladen: {{created}} erstellt, {{updated}} aktualisiert",
+    "loadPromptSample": "Beispiel-Prompt laden",
+    "sampleStatus": {
+      "custom": "Eigener Prompt",
+      "sample_current": "Beispiel aktuell",
+      "sample_update_available": "Beispiel Update",
+      "modified": "Geändert",
+      "legacy_sample": "Nicht verfolgt"
+    },
+    "sampleStatusHelp": {
+      "custom": "kein mitgeliefertes Beispiel",
+      "sample_current": "entspricht dem aktuellen Beispiel",
+      "sample_update_available": "neues Beispiel verfügbar",
+      "modified": "lokal angepasst",
+      "legacy_sample": "vor dem Sample-Tracking erstellt oder vorher manuell geändert"
+    },
+    "promptTypes": {
+      "date": "Datumserkennung"
+    }
   },
   "processing": {
     "processingInProgress": "Verarbeitung läuft...",

@@ -58,7 +58,7 @@ class OCRStep(AbstractStep):
 
         try:
             vision_pipeline = await VisionPipeline.create()
-            pdf_bytes = await ctx.paperless.get_document_file(ctx.doc_id)
+            pdf_bytes = await ctx.paperless.get_document_file(ctx.doc_id, original=True)
 
             vision_prompt_text = None
             async with get_async_session() as session:

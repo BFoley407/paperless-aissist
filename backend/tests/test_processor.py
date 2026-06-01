@@ -5,6 +5,7 @@ def test_modular_tag_defaults_has_required_keys():
     required_keys = [
         "modular_tag_ocr",
         "modular_tag_ocr_fix",
+        "modular_tag_date",
         "modular_tag_title",
         "modular_tag_correspondent",
         "modular_tag_document_type",
@@ -18,5 +19,6 @@ def test_modular_tag_defaults_has_required_keys():
 
 def test_modular_tag_defaults_values():
     assert MODULAR_TAG_DEFAULTS["modular_tag_process"] == "ai-process"
+    assert MODULAR_TAG_DEFAULTS["modular_tag_date"] == "ai-date"
     assert MODULAR_TAG_DEFAULTS["modular_tag_fields"] == "ai-fields"
     assert MODULAR_TAG_DEFAULTS["modular_tag_title"] == "ai-title"

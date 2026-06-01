@@ -5,9 +5,7 @@ directory, configures logging, and manages scheduler lifecycle. All routes requi
 authentication when auth is enabled.
 """
 
-import json
 import logging
-from pathlib import Path
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -85,15 +83,11 @@ async def lifespan(app: FastAPI):
 
     from .database import get_session
     from .models import Prompt, Config
+    from .services.prompt_samples import load_samples, sample_payload
     from sqlmodel import select
     from datetime import datetime, timezone
 
-    examples_dir = Path(__file__).parent.parent.parent / "examples" / "prompts"
-    default_prompts = []
-    if examples_dir.exists():
-        for json_file in sorted(examples_dir.glob("*.json")):
-            with open(json_file) as f:
-                default_prompts.append(json.load(f))
+    default_prompts = load_samples()
 
     with get_session() as session:
         stmt = select(Config).where(Config.key == "log_level")
@@ -102,14 +96,18 @@ async def lifespan(app: FastAPI):
             apply_log_level(log_cfg.value)
 
     with get_session() as session:
-        for p in default_prompts:
+        now = datetime.now(timezone.utc)
+        for p in default_prompts.values():
             stmt = select(Prompt).where(Prompt.name == p["name"])
             existing = session.exec(stmt).first()
             if not existing:
                 db_prompt = Prompt(
-                    **p,
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
+                    **sample_payload(p),
+                    sample_key=p["sample_key"],
+                    sample_hash=p["sample_hash"],
+                    sample_updated_at=now,
+                    created_at=now,
+                    updated_at=now,
                 )
                 session.add(db_prompt)
 

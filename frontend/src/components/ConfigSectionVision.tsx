@@ -13,12 +13,14 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
   const getVisionModelPlaceholder = (provider: string) => {
     if (provider === 'openai') return 'gpt-4o'
     if (provider === 'grok') return 'grok-2-vision-1212'
+    if (provider === 'openrouter') return 'openai/gpt-4o'
     return 'qwen2.5vl:7b'
   }
 
   const getApiBasePlaceholder = (provider: string) => {
     if (provider === 'openai') return 'https://api.openai.com/v1'
     if (provider === 'grok') return 'https://api.x.ai/v1'
+    if (provider === 'openrouter') return 'https://openrouter.ai/api/v1'
     return 'http://localhost:11434'
   }
 
@@ -52,6 +54,7 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
             <option value="ollama">Ollama</option>
             <option value="openai">OpenAI</option>
             <option value="grok">Grok (xAI)</option>
+            <option value="openrouter">OpenRouter</option>
           </select>
         </div>
         <div>
@@ -73,6 +76,22 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
             placeholder={getApiBasePlaceholder(config.llm_provider_vision)}
             className={fieldClass}
           />
+        </div>
+        <div>
+          <label htmlFor="vision-pdf-mode" className={labelClass}>
+            {t('config.visionPdfMode')}
+          </label>
+          <select
+            id="vision-pdf-mode"
+            value={config.vision_pdf_mode || 'auto'}
+            onChange={(e) => handleChange('vision_pdf_mode', e.target.value)}
+            className={fieldClass}
+          >
+            <option value="auto">{t('config.visionPdfModeAuto')}</option>
+            <option value="native_pdf">{t('config.visionPdfModeNative')}</option>
+            <option value="page_images">{t('config.visionPdfModeImages')}</option>
+          </select>
+          <p className={hintClass}>{t('config.visionPdfModeHelp')}</p>
         </div>
         <div>
           <label className={labelClass}>
@@ -103,6 +122,32 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
             className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <p className={hintClass}>{t('config.llmTimeoutVisionHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmTemperatureVision')}</label>
+          <input
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.llm_temperature_vision || '0.3'}
+            onChange={(e) => handleChange('llm_temperature_vision', e.target.value)}
+            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmTemperatureVisionHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmMaxTokensVision')}</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={config.llm_max_tokens_vision || ''}
+            onChange={(e) => handleChange('llm_max_tokens_vision', e.target.value)}
+            placeholder="8192"
+            className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmMaxTokensVisionHint')}</p>
         </div>
       </div>
     </div>

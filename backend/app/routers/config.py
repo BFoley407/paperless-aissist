@@ -5,12 +5,14 @@ from fastapi import APIRouter, HTTPException, Body
 from sqlmodel import select
 from typing import Optional
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel
 
 from ..database import get_async_session
 from ..models import Config
 from ..schemas import ConfigResponse, ConfigDetailResponse, ConfigDeleteResponse
+from ..services.llm_handler import OPENAI_COMPATIBLE_PROVIDERS
 from ..services.log_stream import apply_log_level
 
 
@@ -156,7 +158,7 @@ async def test_ollama_connection():
     config = await get_llm_config()
 
     # Test main LLM
-    if config["provider"] in ("openai", "grok"):
+    if config["provider"] in OPENAI_COMPATIBLE_PROVIDERS:
         main_result = await test_openai_url(config["api_base"], config["api_key"])
     else:
         main_result = await test_ollama_url(config["api_base"])
@@ -168,7 +170,7 @@ async def test_ollama_connection():
 
     # Test vision LLM if enabled
     if config["enable_vision"]:
-        if config["provider_vision"] in ("openai", "grok"):
+        if config["provider_vision"] in OPENAI_COMPATIBLE_PROVIDERS:
             vision_result = await test_openai_url(
                 config["api_base_vision"], config["api_key_vision"]
             )
@@ -227,6 +229,17 @@ async def set_config(data: ConfigUpdate = Body(...), description: Optional[str] 
     For sensitive keys (tokens, API keys), an empty/whitespace value is treated
     as a no-op: the existing value is preserved instead of being overwritten.
     """
+    if data.key == "paperless_url":
+        normalized = (data.value or "").strip().rstrip("/")
+        if normalized:
+            parsed = urlparse(normalized)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise HTTPException(
+                    status_code=400,
+                    detail="paperless_url must start with http:// or https://",
+                )
+        data.value = normalized
+
     async with get_async_session() as session:
         stmt = select(Config).where(Config.key == data.key)
         config = await session.exec(stmt)

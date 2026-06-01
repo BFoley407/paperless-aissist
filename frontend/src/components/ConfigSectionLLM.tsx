@@ -41,12 +41,14 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
   const getModelPlaceholder = (provider: string) => {
     if (provider === 'openai') return 'gpt-4o-mini'
     if (provider === 'grok') return 'grok-3-mini'
+    if (provider === 'openrouter') return 'openai/gpt-4o-mini'
     return 'qwen2.5:7b'
   }
 
   const getApiBasePlaceholder = (provider: string) => {
     if (provider === 'openai') return 'https://api.openai.com/v1'
     if (provider === 'grok') return 'https://api.x.ai/v1'
+    if (provider === 'openrouter') return 'https://openrouter.ai/api/v1'
     return 'http://localhost:11434'
   }
 
@@ -83,6 +85,7 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
             <option value="ollama">Ollama</option>
             <option value="openai">OpenAI</option>
             <option value="grok">Grok (xAI)</option>
+            <option value="openrouter">OpenRouter</option>
           </select>
         </div>
         <div>
@@ -162,6 +165,32 @@ export function ConfigSectionLLM({ config, onSave, secretsSet }: ConfigSectionPr
             className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           />
           <p className={hintClass}>{t('config.llmTimeoutHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmTemperature')}</label>
+          <input
+            type="number"
+            min="0"
+            max="2"
+            step="0.1"
+            value={config.llm_temperature || '0.3'}
+            onChange={(e) => handleChange('llm_temperature', e.target.value)}
+            className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmTemperatureHint')}</p>
+        </div>
+        <div>
+          <label className={labelClass}>{t('config.llmMaxTokens')}</label>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={config.llm_max_tokens || ''}
+            onChange={(e) => handleChange('llm_max_tokens', e.target.value)}
+            placeholder="4096"
+            className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmMaxTokensHint')}</p>
         </div>
       </div>
     </div>

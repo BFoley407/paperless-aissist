@@ -13,16 +13,24 @@ from ..exceptions import LLMUnavailableError
 
 logger = logging.getLogger(__name__)
 
+OPENAI_COMPATIBLE_PROVIDERS = frozenset({"openai", "grok", "openrouter"})
+OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
+OPENROUTER_REFERER = "https://github.com/nyxtron/paperless-aissist"
+OPENROUTER_TITLE = "Paperless-AIssist"
+DEFAULT_TEMPERATURE = 0.3
+
 
 class LLMHandler:
     """HTTP client for LLM inference via Ollama or OpenAI-compatible APIs.
 
     Attributes:
-        provider: "ollama", "openai", or "grok".
+        provider: "ollama", "openai", "grok", or "openrouter".
         model: Model name passed to the API.
         api_base: Base URL for the API endpoint.
         api_key: Optional API key for authenticated endpoints.
         timeout: Request timeout in seconds.
+        temperature: Default sampling temperature for requests.
+        max_tokens: Optional default output token limit.
     """
 
     def __init__(
@@ -32,12 +40,16 @@ class LLMHandler:
         api_base: Optional[str] = None,
         api_key: Optional[str] = None,
         timeout: float = 600.0,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = None,
     ):
         self.provider = provider
         self.model = model
         self.api_base = api_base or ""
         self.api_key = api_key
         self.timeout = timeout
+        self.temperature = temperature
+        self.max_tokens = max_tokens
         self._client: Optional[httpx.AsyncClient] = None
         self._closed = False
 
@@ -47,6 +59,9 @@ class LLMHandler:
             headers = {"Content-Type": "application/json"}
             if self.api_key:
                 headers["Authorization"] = f"Bearer {self.api_key}"
+            if self.provider == "openrouter":
+                headers["HTTP-Referer"] = OPENROUTER_REFERER
+                headers["X-OpenRouter-Title"] = OPENROUTER_TITLE
             self._client = httpx.AsyncClient(
                 base_url=self.api_base,
                 timeout=self.timeout,
@@ -92,12 +107,27 @@ class LLMHandler:
         if not provider:
             provider = "ollama"
         if not model:
-            model = "llama3" if not for_vision else "llava"
+            if provider == "openrouter":
+                model = "openai/gpt-4o" if for_vision else "openai/gpt-4o-mini"
+            else:
+                model = "llama3" if not for_vision else "llava"
+        if provider == "openrouter" and not api_base:
+            api_base = OPENROUTER_API_BASE
 
         timeout_str = await cls._get_config(f"llm_timeout{suffix}")
         if for_vision and not timeout_str:
             timeout_str = await cls._get_config("llm_timeout")
         timeout = float(timeout_str) if timeout_str else 600.0
+
+        temperature_str = await cls._get_config(f"llm_temperature{suffix}")
+        if for_vision and not temperature_str:
+            temperature_str = await cls._get_config("llm_temperature")
+        temperature = cls._parse_temperature(temperature_str)
+
+        max_tokens_str = await cls._get_config(f"llm_max_tokens{suffix}")
+        if for_vision and not max_tokens_str:
+            max_tokens_str = await cls._get_config("llm_max_tokens")
+        max_tokens = cls._parse_max_tokens(max_tokens_str)
 
         logger.info(f"Provider: {provider}, Model: {model}, API Base: {api_base}")
 
@@ -107,6 +137,8 @@ class LLMHandler:
             api_base=api_base,
             api_key=api_key,
             timeout=timeout,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     @staticmethod
@@ -116,12 +148,35 @@ class LLMHandler:
         cache = await ConfigCache.get_instance()
         return await cache.get(key)
 
+    @staticmethod
+    def _parse_temperature(value: Optional[str]) -> float:
+        if not value:
+            return DEFAULT_TEMPERATURE
+        try:
+            temperature = float(value)
+        except (TypeError, ValueError):
+            return DEFAULT_TEMPERATURE
+        if temperature < 0 or temperature > 2:
+            return DEFAULT_TEMPERATURE
+        return temperature
+
+    @staticmethod
+    def _parse_max_tokens(value: Optional[str]) -> Optional[int]:
+        if not value:
+            return None
+        try:
+            max_tokens = int(value)
+        except (TypeError, ValueError):
+            return None
+        return max_tokens if max_tokens > 0 else None
+
     async def complete(
         self,
         system_prompt: str,
         user_prompt: str,
         json_mode: bool = True,
-        temperature: float = 0.3,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> dict[str, Any]:
         """Send a text completion request to the configured LLM.
 
@@ -130,17 +185,31 @@ class LLMHandler:
             user_prompt: User prompt content.
             json_mode: If True, request JSON-formatted response.
             temperature: Sampling temperature (lower = more deterministic).
+            max_tokens: Optional output token limit.
 
         Returns:
             A dict with "text"/"raw" keys on success.
         """
+        effective_temperature = (
+            self.temperature if temperature is None else temperature
+        )
+        effective_max_tokens = self.max_tokens if max_tokens is None else max_tokens
+
         if self.provider == "ollama":
             return await self._ollama_complete(
-                system_prompt, user_prompt, json_mode, temperature
+                system_prompt,
+                user_prompt,
+                json_mode,
+                effective_temperature,
+                effective_max_tokens,
             )
-        elif self.provider in ("openai", "grok"):
+        elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_complete(
-                system_prompt, user_prompt, json_mode, temperature
+                system_prompt,
+                user_prompt,
+                json_mode,
+                effective_temperature,
+                effective_max_tokens,
             )
         else:
             raise Exception(
@@ -153,6 +222,7 @@ class LLMHandler:
         user_prompt: str,
         json_mode: bool,
         temperature: float,
+        max_tokens: Optional[int],
     ) -> dict[str, Any]:
         """Internal Ollama /api/chat implementation."""
         client = self.client
@@ -175,6 +245,8 @@ class LLMHandler:
                 "temperature": temperature,
             },
         }
+        if max_tokens is not None:
+            payload["options"]["num_predict"] = max_tokens
 
         if json_mode:
             payload["format"] = "json"
@@ -207,6 +279,7 @@ class LLMHandler:
         user_prompt: str,
         json_mode: bool,
         temperature: float,
+        max_tokens: Optional[int],
     ) -> dict[str, Any]:
         """Internal OpenAI-compatible /chat/completions implementation."""
         client = self.client
@@ -226,6 +299,8 @@ class LLMHandler:
             "messages": messages,
             "temperature": temperature,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
 
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
@@ -257,7 +332,8 @@ class LLMHandler:
         images: Optional[list[bytes]] = None,
         pdf_bytes: Optional[bytes] = None,
         json_mode: bool = True,
-        temperature: float = 0.3,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> dict[str, Any]:
         """Send a vision/multimodal completion request.
 
@@ -268,23 +344,35 @@ class LLMHandler:
             pdf_bytes: Raw PDF bytes (OpenAI provider, sent natively).
             json_mode: If True, request JSON-formatted response.
             temperature: Sampling temperature.
+            max_tokens: Optional output token limit.
 
         Returns:
             A dict with extracted "text" or "raw".
         """
         if images is None:
             images = []
+        effective_temperature = (
+            self.temperature if temperature is None else temperature
+        )
+        effective_max_tokens = self.max_tokens if max_tokens is None else max_tokens
+
         if self.provider == "ollama":
             return await self._ollama_vision_complete(
-                system_prompt, user_prompt, images, json_mode, temperature
+                system_prompt,
+                user_prompt,
+                images,
+                json_mode,
+                effective_temperature,
+                effective_max_tokens,
             )
-        elif self.provider in ("openai", "grok"):
+        elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_vision_complete(
                 system_prompt,
                 user_prompt,
                 images,
                 json_mode,
-                temperature,
+                effective_temperature,
+                effective_max_tokens,
                 pdf_bytes=pdf_bytes if self.provider == "openai" else None,
             )
         else:
@@ -296,7 +384,8 @@ class LLMHandler:
         user_prompt: str = "",
         images: Optional[list[bytes]] = None,
         json_mode: bool = True,
-        temperature: float = 0.3,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = None,
     ) -> dict[str, Any]:
         """Ollama vision implementation — processes images page-by-page."""
         if images is None:
@@ -328,6 +417,8 @@ class LLMHandler:
                 "stream": False,
                 "options": {"temperature": temperature},
             }
+            if max_tokens is not None:
+                payload["options"]["num_predict"] = max_tokens
             if json_mode:
                 payload["format"] = "json"
 
@@ -361,7 +452,8 @@ class LLMHandler:
         user_prompt: str = "",
         images: Optional[list[bytes]] = None,
         json_mode: bool = True,
-        temperature: float = 0.3,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: Optional[int] = None,
         pdf_bytes: Optional[bytes] = None,
     ) -> dict[str, Any]:
         """OpenAI-compatible vision implementation — handles PDF and image inputs."""
@@ -373,7 +465,51 @@ class LLMHandler:
         url = "/chat/completions"
         logger.info(f"OpenAI Vision calling: {url}, model: {self.model}")
 
-        if pdf_bytes:
+        try:
+            if not pdf_bytes:
+                logger.info(
+                    f"OpenAI Vision: sending JPEG images page-by-page ({len(images)} page(s))"
+                )
+                combined_text = []
+                for img in images:
+                    img_b64 = base64.b64encode(img).decode("utf-8")
+                    content = []
+                    if user_prompt:
+                        content.append({"type": "text", "text": user_prompt})
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+                        }
+                    )
+                    messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": content},
+                    ]
+                    payload: dict[str, Any] = {
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": temperature,
+                    }
+                    if max_tokens is not None:
+                        payload["max_tokens"] = max_tokens
+                    if json_mode:
+                        payload["response_format"] = {"type": "json_object"}
+
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                    content_text = data["choices"][0]["message"]["content"].strip()
+                    combined_text.append(content_text)
+
+                full_text = "\n\n".join(combined_text)
+                if json_mode:
+                    try:
+                        return json.loads(full_text)
+                    except json.JSONDecodeError:
+                        return {"raw": full_text}
+                return {"text": full_text}
+
             logger.info("OpenAI Vision: sending PDF natively (all pages)")
             pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
             content: list[dict] = [
@@ -387,37 +523,23 @@ class LLMHandler:
             ]
             if user_prompt:
                 content.append({"type": "text", "text": user_prompt})
-        else:
-            logger.info(
-                f"OpenAI Vision: sending JPEG images (all {len(images)} page(s))"
-            )
-            content = []
-            if user_prompt:
-                content.append({"type": "text", "text": user_prompt})
-            for img in images:
-                img_b64 = base64.b64encode(img).decode("utf-8")
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-                    }
-                )
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content},
-        ]
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": content},
+            ]
 
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-        }
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens is not None:
+                payload["max_tokens"] = max_tokens
 
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
 
-        try:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()

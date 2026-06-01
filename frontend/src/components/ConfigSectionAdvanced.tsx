@@ -64,6 +64,20 @@ export function ConfigSectionAdvanced({ config, onSave }: ConfigSectionProps) {
           </select>
           <p className={hintClass}>{t('config.documentListRefreshModeHint')}</p>
         </div>
+        <div className="w-48">
+          <label htmlFor="ocr-fix-max-chars" className={labelClass}>
+            {t('config.ocrFixMaxChars')}
+          </label>
+          <input
+            id="ocr-fix-max-chars"
+            type="number"
+            min="1"
+            value={config.ocr_fix_max_chars || '10000'}
+            onChange={(e) => handleChange('ocr_fix_max_chars', e.target.value)}
+            className={fieldClass}
+          />
+          <p className={hintClass}>{t('config.ocrFixMaxCharsHint')}</p>
+        </div>
       </div>
     </div>
   )

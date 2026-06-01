@@ -65,6 +65,18 @@ describe('Dashboard', () => {
           status: 'success',
           llm_provider: null,
           llm_model: 'qwen3',
+          llm_response: JSON.stringify({
+            steps: [
+              {
+                name: 'date',
+                details: {
+                  created_date: '2026-04-28',
+                  confidence: 'high',
+                  evidence: 'Rechnungsdatum: Dienstag, 28. April 2026',
+                },
+              },
+            ],
+          }),
           error_message: null,
           processing_time_ms: 1200,
           processed_at: '2026-05-16T10:00:00Z',
@@ -82,5 +94,7 @@ describe('Dashboard', () => {
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noreferrer')
     expect(screen.getByText('#42')).toBeInTheDocument()
+    expect(await screen.findByText(/created_date: 2026-04-28/)).toBeInTheDocument()
+    expect(screen.getByText(/confidence: high/)).toBeInTheDocument()
   })
 })

@@ -40,6 +40,9 @@ class Prompt(SQLModel, table=True):
         system_prompt: System-level instructions for the LLM.
         user_template: User prompt template with variable placeholders.
         is_active: Whether this prompt is enabled.
+        sample_key: Stable bundled sample identity, if this prompt maps to one.
+        sample_hash: Hash of the bundled sample last applied to this prompt.
+        sample_updated_at: Time the bundled sample was last applied.
         created_at: Creation timestamp.
         updated_at: Last modification timestamp.
     """
@@ -53,6 +56,9 @@ class Prompt(SQLModel, table=True):
     system_prompt: str
     user_template: str
     is_active: bool = Field(default=True)
+    sample_key: Optional[str] = Field(default=None, index=True)
+    sample_hash: Optional[str] = None
+    sample_updated_at: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

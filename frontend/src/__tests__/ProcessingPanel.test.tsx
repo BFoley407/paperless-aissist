@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   mockGetConfig: vi.fn(),
   mockGetTagged: vi.fn(),
   mockTrigger: vi.fn(),
+  mockProcess: vi.fn(),
   mockGetStatus: vi.fn(),
 }))
 
@@ -16,7 +17,7 @@ vi.mock('../api/client', () => ({
   documentsApi: {
     getTagged: mocks.mockGetTagged,
     trigger: mocks.mockTrigger,
-    process: vi.fn(),
+    process: mocks.mockProcess,
   },
   schedulerApi: {
     getStatus: mocks.mockGetStatus,
@@ -55,6 +56,28 @@ describe('ProcessingPanel', () => {
           { success: true, document_id: 1 },
           { success: true, document_id: 2 },
         ],
+      },
+    })
+    mocks.mockProcess.mockResolvedValue({
+      data: {
+        success: true,
+        document_id: 1,
+        title: 'Invoice 2024',
+        updates: {},
+        processing_time_ms: 1200,
+        steps: [
+          {
+            name: 'date',
+            status: 'completed',
+            duration_ms: 800,
+            details: {
+              created_date: '2026-04-28',
+              confidence: 'high',
+              evidence: 'Rechnungsdatum: Dienstag, 28. April 2026',
+            },
+          },
+        ],
+        proposed_changes: {},
       },
     })
     mocks.mockGetStatus.mockResolvedValue({
@@ -246,5 +269,19 @@ describe('ProcessingPanel', () => {
       expect(screen.queryByText('Invoice 2024')).not.toBeInTheDocument()
       expect(screen.getByText('Contract ABC')).toBeInTheDocument()
     })
+  })
+
+  it('renders date step details in single document processing results', async () => {
+    render(<ProcessingPanel />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Invoice 2024')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getAllByText(/processing.processBtn/i)[0])
+
+    expect(await screen.findByText(/created_date: 2026-04-28/)).toBeInTheDocument()
+    expect(screen.getByText(/confidence: high/)).toBeInTheDocument()
+    expect(screen.getByText(/Rechnungsdatum: Dienstag, 28. April 2026/)).toBeInTheDocument()
   })
 })

@@ -21,6 +21,17 @@ from ..services.log_stream import get_history, subscribe, unsubscribe
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
+def _serialize_utc_datetime(value: datetime | None) -> str | None:
+    """Return an ISO timestamp explicitly marked as UTC for browser parsing."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    else:
+        value = value.astimezone(timezone.utc)
+    return value.isoformat().replace("+00:00", "Z")
+
+
 @router.delete("/reset")
 async def reset_stats(user: dict = Depends(require_auth)):
     try:
@@ -125,9 +136,10 @@ async def get_recent_logs(limit: int = 20, user: dict = Depends(require_auth)):
                 status=log.status,
                 llm_provider=log.llm_provider,
                 llm_model=log.llm_model,
+                llm_response=log.llm_response,
                 error_message=log.error_message,
                 processing_time_ms=log.processing_time_ms,
-                processed_at=log.processed_at.isoformat() if log.processed_at else None,
+                processed_at=_serialize_utc_datetime(log.processed_at),
             )
             for log in logs
         ]
@@ -187,5 +199,5 @@ async def get_log_by_document(doc_id: int, user: dict = Depends(require_auth)):
             "llm_response": log.llm_response,
             "error_message": log.error_message,
             "processing_time_ms": log.processing_time_ms,
-            "processed_at": log.processed_at.isoformat(),
+            "processed_at": _serialize_utc_datetime(log.processed_at),
         }

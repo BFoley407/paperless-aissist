@@ -8,6 +8,7 @@ DocumentProcessor in the modular pipeline.
 from .base import AbstractStep, StepContext, StepResult
 from .ocr_step import OCRStep
 from .ocr_fix_step import OCRFixStep
+from .date_step import DateStep
 from .title_step import TitleStep
 from .correspondent_step import CorrespondentStep
 from .document_type_step import DocumentTypeStep
@@ -20,6 +21,7 @@ __all__ = [
     "StepResult",
     "OCRStep",
     "OCRFixStep",
+    "DateStep",
     "TitleStep",
     "CorrespondentStep",
     "DocumentTypeStep",

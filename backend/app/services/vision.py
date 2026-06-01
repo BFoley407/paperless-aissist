@@ -7,8 +7,11 @@ import asyncio
 import io
 import logging
 from typing import Optional, Any
+from urllib.parse import urlparse
+
 import fitz
 from PIL import Image
+
 from .llm_handler import LLMHandlerManager, LLMHandler
 
 logger = logging.getLogger(__name__)
@@ -70,6 +73,29 @@ class VisionPipeline:
             doc.close()
         return images
 
+    async def _get_vision_pdf_mode(self) -> str:
+        """Return the configured PDF input mode for OpenAI-compatible vision."""
+        from .config_cache import ConfigCache
+
+        cache = await ConfigCache.get_instance()
+        mode = await cache.get("vision_pdf_mode")
+        if mode in {"auto", "native_pdf", "page_images"}:
+            return mode
+        return "auto"
+
+    def _is_official_openai_api_base(self) -> bool:
+        api_base = getattr(self.llm_handler, "api_base", "") or ""
+        hostname = urlparse(api_base).hostname or ""
+        return hostname.lower() == "api.openai.com"
+
+    async def _should_use_native_pdf(self) -> bool:
+        mode = await self._get_vision_pdf_mode()
+        if mode == "native_pdf":
+            return True
+        if mode == "page_images":
+            return False
+        return self._is_official_openai_api_base()
+
     async def extract_text_from_pdf(
         self,
         pdf_bytes: bytes,
@@ -82,8 +108,7 @@ class VisionPipeline:
             f"extract_text_from_pdf: provider={self.llm_handler.provider}, pdf_size={len(pdf_bytes)} bytes"
         )
 
-        if self.llm_handler.provider == "openai":
-            # Send PDF natively — OpenAI processes all pages automatically
+        if self.llm_handler.provider == "openai" and await self._should_use_native_pdf():
             result = await self.llm_handler.vision_complete(
                 system_prompt=prompt or "",
                 images=[],
@@ -95,6 +120,7 @@ class VisionPipeline:
             result = await self.llm_handler.vision_complete(
                 system_prompt=prompt or "",
                 images=images,
+                pdf_bytes=None,
                 json_mode=False,
             )
 
@@ -111,7 +137,7 @@ class VisionPipeline:
         if not self.llm_handler:
             raise ValueError("Vision LLM handler not initialized")
 
-        if self.llm_handler.provider == "openai":
+        if self.llm_handler.provider == "openai" and await self._should_use_native_pdf():
             result = await self.llm_handler.vision_complete(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
@@ -125,6 +151,7 @@ class VisionPipeline:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 images=images,
+                pdf_bytes=None,
                 json_mode=False,
             )
 

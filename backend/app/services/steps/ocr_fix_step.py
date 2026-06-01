@@ -5,11 +5,14 @@ to correct OCR errors in the existing ctx.ocr_text.
 """
 
 import logging
+import os
 from typing import Any
 
 from .base import AbstractStep, StepContext, StepResult
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_OCR_FIX_MAX_CHARS = 10000
 
 
 class OCRFixStep(AbstractStep):
@@ -37,6 +40,7 @@ class OCRFixStep(AbstractStep):
             if config
             else "ai-ocr-fix"
         )
+        self.ocr_fix_max_chars = self._parse_max_chars(config)
 
     @classmethod
     async def from_config(cls, config):
@@ -66,6 +70,25 @@ class OCRFixStep(AbstractStep):
         text = ctx.ocr_text
         if not text:
             return StepResult(data={}, error=None)
+
+        content_length = len(text)
+        if content_length > self.ocr_fix_max_chars:
+            logger.info(
+                "OCRFixStep: skipping doc %s because content length %d exceeds max %d",
+                ctx.doc_id,
+                content_length,
+                self.ocr_fix_max_chars,
+            )
+            return StepResult(
+                data={},
+                error=None,
+                details={
+                    "reason": "content_too_large",
+                    "content_length": content_length,
+                    "max_chars": self.ocr_fix_max_chars,
+                },
+                skipped=True,
+            )
 
         ocr_fix_prompt = None
         async with get_async_session() as session:
@@ -109,3 +132,16 @@ class OCRFixStep(AbstractStep):
     async def _get_config(config: dict, key: str, default: str = None) -> str:
         """Helper to read a config key with a default."""
         return config.get(key) if config else default
+
+    @staticmethod
+    def _parse_max_chars(config: dict | None) -> int:
+        value = config.get("ocr_fix_max_chars") if config else None
+        if not value:
+            value = os.environ.get("OCR_FIX_MAX_CHARS", str(DEFAULT_OCR_FIX_MAX_CHARS))
+        try:
+            max_chars = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_OCR_FIX_MAX_CHARS
+        if max_chars < 1:
+            return DEFAULT_OCR_FIX_MAX_CHARS
+        return max_chars

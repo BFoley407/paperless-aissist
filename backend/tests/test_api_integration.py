@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone, timedelta
 
 import pytest
 
@@ -53,8 +54,67 @@ def test_config_sensitive_key_not_accessible(client):
         )
 
 
+def test_paperless_url_trailing_slash_is_stripped(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": "  http://paperless.local///  "},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://paperless.local"
+
+    response = client.get("/api/config/paperless_url")
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://paperless.local"
+
+
+def test_paperless_url_without_scheme_is_rejected(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": "paperless.local"},
+    )
+
+    assert response.status_code == 400
+    assert "http:// or https://" in response.json()["detail"]
+
+
+def test_paperless_url_empty_value_is_allowed(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "paperless_url", "value": ""},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == ""
+
+
+def test_other_config_keys_are_not_normalized(client):
+    response = client.post(
+        "/api/config",
+        json={"key": "llm_api_base", "value": "http://localhost:11434/"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["value"] == "http://localhost:11434/"
+
+
 def test_stats_endpoints(client):
     """Stats endpoints return valid data."""
+    from app.database import get_session
+    from app.models import ProcessingLog
+
+    with get_session() as session:
+        session.add(
+            ProcessingLog(
+                document_id=99,
+                document_title="Date Test",
+                status="success",
+                llm_response='{"steps":[{"name":"date","details":{"created_date":"2026-04-28"}}]}',
+                processed_at=datetime(2026, 5, 17, 16, 49, 9, 467710),
+            )
+        )
+
     response = client.get("/api/stats")
     assert response.status_code == 200
     assert "total_processed" in response.json()
@@ -64,6 +124,24 @@ def test_stats_endpoints(client):
 
     response = client.get("/api/stats/recent?limit=10")
     assert response.status_code == 200
+    assert any(log.get("llm_response") for log in response.json())
+    date_log = next(log for log in response.json() if log["document_id"] == 99)
+    assert date_log["processed_at"] == "2026-05-17T16:49:09.467710Z"
+
+
+def test_stats_datetime_serialization_marks_utc():
+    from app.routers.stats import _serialize_utc_datetime
+
+    assert (
+        _serialize_utc_datetime(datetime(2026, 5, 17, 16, 49, 9, 467710))
+        == "2026-05-17T16:49:09.467710Z"
+    )
+    assert (
+        _serialize_utc_datetime(
+            datetime(2026, 5, 17, 18, 49, 9, tzinfo=timezone(timedelta(hours=2)))
+        )
+        == "2026-05-17T16:49:09Z"
+    )
 
 
 def test_stats_bounds(client):
@@ -106,6 +184,32 @@ def test_scheduler_status_endpoint(client):
     data = response.json()
     assert "enabled" in data or "is_processing" in data
     assert "interval_minutes" in data or "interval" in data
+
+
+def test_openrouter_connection_test_uses_openai_compatible_probe(client, monkeypatch):
+    openai_probe = AsyncMock(
+        return_value={"success": True, "message": "Connected!", "models": ["test"]}
+    )
+    ollama_probe = AsyncMock(
+        return_value={"success": False, "message": "Unexpected Ollama call"}
+    )
+    monkeypatch.setattr("app.routers.config.test_openai_url", openai_probe)
+    monkeypatch.setattr("app.routers.config.test_ollama_url", ollama_probe)
+
+    client.post("/api/config", json={"key": "llm_provider", "value": "openrouter"})
+    client.post(
+        "/api/config",
+        json={"key": "llm_api_base", "value": "https://openrouter.ai/api/v1"},
+    )
+    client.post("/api/config", json={"key": "llm_api_key", "value": "sk-test"})
+    client.post("/api/config", json={"key": "enable_vision", "value": "false"})
+
+    response = client.post("/api/config/test-ollama")
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    openai_probe.assert_awaited_once_with("https://openrouter.ai/api/v1", "sk-test")
+    ollama_probe.assert_not_awaited()
 
 
 def test_stats_log_stream_asyncio_imported(client):
