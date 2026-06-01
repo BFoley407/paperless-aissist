@@ -4,7 +4,10 @@ Handles bearer token validation against Paperless, with an in-memory cache
 to reduce load. Auth can be enabled/disabled via config or AUTH_ENABLED env var.
 """
 
+import hashlib
+import hmac
 import os
+import secrets
 import time
 import logging
 import httpx
@@ -19,10 +22,21 @@ logger = logging.getLogger(__name__)
 
 _MAX_CACHE_SIZE = 1000
 _CACHE_TTL_SECONDS = 30
+AUTOMATION_API_TOKEN_HASH_KEY = "automation_api_token_hash"
 
 _token_cache: dict[str, tuple[float, dict]] = {}
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def generate_automation_token() -> str:
+    """Create a high-entropy token for external automation clients."""
+    return f"paia_{secrets.token_urlsafe(32)}"
+
+
+def hash_automation_token(token: str) -> str:
+    """Hash an automation token before it is stored in config."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def _is_auth_enabled() -> bool:
@@ -47,6 +61,17 @@ async def _get_paperless_url() -> str:
         if cfg and cfg.value:
             return cfg.value
     return os.environ.get("PAPERLESS_URL", "")
+
+
+async def _get_automation_token_hash() -> str:
+    """Retrieve the stored automation API token hash."""
+    async with get_async_session() as session:
+        stmt = select(Config).where(Config.key == AUTOMATION_API_TOKEN_HASH_KEY)
+        cfg = await session.exec(stmt)
+        cfg = cfg.first()
+        if cfg and cfg.value:
+            return cfg.value
+    return ""
 
 
 def _evict_stale_entries():
@@ -146,3 +171,25 @@ async def require_auth_or_query(
     if not auth_token:
         raise HTTPException(status_code=401, detail="Authentication required")
     return await _verify_token_against_paperless(auth_token)
+
+
+async def require_automation_auth(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> dict:
+    """Require the dedicated Paperless-AIssist automation API token.
+
+    This is intentionally independent from UI auth and remains required even
+    when the web UI login is disabled.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Automation API token required")
+
+    stored_hash = await _get_automation_token_hash()
+    if not stored_hash:
+        raise HTTPException(status_code=401, detail="Automation API token not configured")
+
+    provided_hash = hash_automation_token(credentials.credentials)
+    if not hmac.compare_digest(provided_hash, stored_hash):
+        raise HTTPException(status_code=401, detail="Invalid automation API token")
+
+    return {"automation": True}

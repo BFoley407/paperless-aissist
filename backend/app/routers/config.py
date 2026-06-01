@@ -12,11 +12,21 @@ from pydantic import BaseModel
 from ..database import get_async_session
 from ..models import Config
 from ..schemas import ConfigResponse, ConfigDetailResponse, ConfigDeleteResponse
+from ..auth import (
+    AUTOMATION_API_TOKEN_HASH_KEY,
+    generate_automation_token,
+    hash_automation_token,
+)
 from ..services.llm_handler import OPENAI_COMPATIBLE_PROVIDERS
 from ..services.log_stream import apply_log_level
 
 
-SENSITIVE_KEYS = {"paperless_token", "llm_api_key", "llm_api_key_vision"}
+SENSITIVE_KEYS = {
+    "paperless_token",
+    "llm_api_key",
+    "llm_api_key_vision",
+    AUTOMATION_API_TOKEN_HASH_KEY,
+}
 
 
 LLM_HANDLER_KEYS = {
@@ -206,6 +216,56 @@ async def get_configs():
             else:
                 data[c.key] = c.value
         return ConfigResponse(data=data, secrets_set=secrets_set)
+
+
+@router.post("/automation-token")
+async def create_automation_token():
+    """Generate and store a dedicated API token for external automations.
+
+    The plain token is returned once. Only its hash is stored.
+    """
+    token = generate_automation_token()
+    token_hash = hash_automation_token(token)
+
+    async with get_async_session() as session:
+        stmt = select(Config).where(Config.key == AUTOMATION_API_TOKEN_HASH_KEY)
+        config = await session.exec(stmt)
+        config = config.first()
+
+        if config:
+            config.value = token_hash
+            config.description = "Hashed API token for automation endpoints"
+            config.updated_at = datetime.now(timezone.utc)
+        else:
+            config = Config(
+                key=AUTOMATION_API_TOKEN_HASH_KEY,
+                value=token_hash,
+                description="Hashed API token for automation endpoints",
+            )
+            session.add(config)
+
+        from ..services.config_cache import ConfigCache
+
+        await (await ConfigCache.get_instance()).invalidate()
+
+    return {"token": token, "token_type": "Bearer"}
+
+
+@router.delete("/automation-token", response_model=ConfigDeleteResponse)
+async def revoke_automation_token():
+    """Revoke the dedicated automation API token."""
+    async with get_async_session() as session:
+        stmt = select(Config).where(Config.key == AUTOMATION_API_TOKEN_HASH_KEY)
+        config = await session.exec(stmt)
+        config = config.first()
+        if config:
+            await session.delete(config)
+
+        from ..services.config_cache import ConfigCache
+
+        await (await ConfigCache.get_instance()).invalidate()
+
+    return {"success": True, "message": "Automation API token revoked"}
 
 
 @router.get("/{key}")

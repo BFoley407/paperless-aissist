@@ -10,7 +10,12 @@ import { ConfigSectionTags } from './ConfigSectionTags'
 import { ConfigSectionAdvanced } from './ConfigSectionAdvanced'
 import { Server, Brain, Clock, Tag, Settings } from 'lucide-react'
 
-const SENSITIVE_KEYS = new Set(['paperless_token', 'llm_api_key', 'llm_api_key_vision'])
+const SENSITIVE_KEYS = new Set([
+  'paperless_token',
+  'llm_api_key',
+  'llm_api_key_vision',
+  'automation_api_token_hash',
+])
 const IMMEDIATE_SAVE_KEYS = new Set(['document_list_refresh_mode'])
 
 const TAB_CONFIG = [
@@ -188,7 +193,14 @@ export default function ConfigPanel() {
       case 'tags':
         return <ConfigSectionTags config={configs} onSave={handleSave} />
       case 'advanced':
-        return <ConfigSectionAdvanced config={configs} onSave={handleSave} />
+        return (
+          <ConfigSectionAdvanced
+            config={configs}
+            onSave={handleSave}
+            secretsSet={secretsSet}
+            onSecretsChanged={loadConfigs}
+          />
+        )
     }
   }
 

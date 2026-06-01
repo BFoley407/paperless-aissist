@@ -35,6 +35,8 @@ describe('configApi', () => {
     expect(typeof clientModule.configApi.set).toBe('function')
     expect(typeof clientModule.configApi.delete).toBe('function')
     expect(typeof clientModule.configApi.testConnection).toBe('function')
+    expect(typeof clientModule.configApi.generateAutomationToken).toBe('function')
+    expect(typeof clientModule.configApi.revokeAutomationToken).toBe('function')
   })
 })
 
@@ -76,5 +78,13 @@ describe('schedulerApi', () => {
     expect(typeof clientModule.schedulerApi.update).toBe('function')
     expect(typeof clientModule.schedulerApi.triggerNow).toBe('function')
     expect(typeof clientModule.schedulerApi.clearState).toBe('function')
+  })
+})
+
+describe('automationApi', () => {
+  it('has required methods', () => {
+    expect(typeof clientModule.automationApi.getStatus).toBe('function')
+    expect(typeof clientModule.automationApi.startProcessing).toBe('function')
+    expect(typeof clientModule.automationApi.stopProcessing).toBe('function')
   })
 })

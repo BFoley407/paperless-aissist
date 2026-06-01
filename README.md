@@ -15,6 +15,7 @@ Tag a document with `ai-process` and it gets automatically classified, titled, t
 - **Document chat** — ask questions about any document via the web UI
 - **Document search & preview** — search Paperless documents from the Chat page; preview what AI processing would do without modifying Paperless
 - **Auto-scheduler** — polls for new `ai-process` tagged documents on a configurable interval
+- **Automation API** — trigger, stop, and check processing from cron, Home Assistant, or custom scripts
 - **Modular tag workflows** — trigger only the steps you need per document (`ai-title`, `ai-tags`, `ai-fields`, etc.) instead of the full pipeline
 - **Multilingual UI** — web interface available in English and German
 - **Optional authentication** — protect the web UI with your Paperless-ngx credentials; disabled by default
@@ -117,6 +118,41 @@ The main LLM and Vision OCR model each have their own generation settings:
 
 - **Temperature** controls randomness. Lower values are more deterministic; `0.0`–`0.3` is recommended for document metadata and OCR.
 - **Max Output Tokens** optionally limits response length. Leave it empty to use the provider default. For Ollama, this is sent as `num_predict`; for OpenAI-compatible providers it is sent as `max_tokens`.
+
+## Automation API
+
+External tools can control the same "Process all" workflow that is available in the web UI. This is useful for cron jobs, webhook tools, custom scripts, and [Home Assistant RESTful Command](https://www.home-assistant.io/integrations/rest_command/) automations.
+
+Generate a dedicated token in **Settings → Advanced → Automation API**. The token is shown once and stored only as a hash.
+
+Use the token as a bearer token:
+
+```bash
+curl -H "Authorization: Bearer paia_..." \
+  http://localhost:8000/api/automation/status
+```
+
+Available endpoints:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/automation/status` | Current processing state and last automation result |
+| `POST` | `/api/automation/process/start` | Start processing tagged documents in the background |
+| `POST` | `/api/automation/process/stop` | Request stop for an automation-owned processing run |
+
+`start` is idempotent: if processing is already running, it returns `already_running` instead of starting a second run. The Automation API token is required even when web UI login is disabled.
+
+Home Assistant example:
+
+```yaml
+rest_command:
+  paperless_aissist_process_all:
+    url: "http://paperless-aissist.local:8000/api/automation/process/start"
+    method: post
+    headers:
+      Authorization: "Bearer paia_your_token_here"
+      Content-Type: "application/json"
+```
 
 ## Recommended Models
 

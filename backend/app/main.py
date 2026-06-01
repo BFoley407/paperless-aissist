@@ -14,7 +14,16 @@ from sqlmodel import select
 
 from .database import run_migrations, get_session
 from .models import Config
-from .routers import app_info, config, prompts, documents, stats, scheduler, auth as auth_router
+from .routers import (
+    app_info,
+    automation,
+    config,
+    prompts,
+    documents,
+    stats,
+    scheduler,
+    auth as auth_router,
+)
 from .auth import require_auth
 from .services.log_stream import BroadcastHandler, apply_log_level
 from .limiter import limiter
@@ -165,6 +174,7 @@ app.include_router(prompts.router, dependencies=_auth_dep)
 app.include_router(documents.router, dependencies=_auth_dep)
 app.include_router(stats.router)
 app.include_router(scheduler.router, dependencies=_auth_dep)
+app.include_router(automation.router)
 app.include_router(app_info.router)
 
 

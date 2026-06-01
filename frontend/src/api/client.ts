@@ -38,6 +38,8 @@ export const configApi = {
     api.post('/config', { key, value, description }),
   delete: (key: string) => api.delete(`/config/${key}`),
   testConnection: () => api.post('/config/test-ollama'),
+  generateAutomationToken: () => api.post('/config/automation-token'),
+  revokeAutomationToken: () => api.delete('/config/automation-token'),
 }
 
 /** Prompt template CRUD API methods. */
@@ -103,6 +105,13 @@ export const schedulerApi = {
     api.put('/scheduler', { enabled: true, interval: intervalMinutes }),
   triggerNow: () => api.post('/scheduler/trigger-now'),
   clearState: () => api.post('/scheduler/clear-state'),
+}
+
+/** Dedicated API methods for external automations. */
+export const automationApi = {
+  getStatus: () => api.get('/automation/status'),
+  startProcessing: () => api.post('/automation/process/start'),
+  stopProcessing: () => api.post('/automation/process/stop'),
 }
 
 export const appInfoApi = {
