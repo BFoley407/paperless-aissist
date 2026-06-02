@@ -178,6 +178,7 @@
     "revokeAutomationToken": "Revoke token",
     "copyAutomationToken": "Copy token",
     "copiedAutomationToken": "Copied",
+    "copyAutomationTokenFailed": "Could not copy token. Please select and copy it manually.",
     "tabServer": "Server",
     "tabLLM": "LLM/Vision",
     "tabVision": "Vision",

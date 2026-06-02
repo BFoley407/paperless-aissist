@@ -8,6 +8,39 @@ import { fieldClass, labelClass, hintClass } from './fieldStyles'
 
 const AUTOMATION_TOKEN_SECRET_KEY = 'automation_api_token_hash'
 
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to the legacy copy path for non-secure origins or denied clipboard access.
+    }
+  }
+
+  if (typeof document.execCommand !== 'function') {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '-1000px'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 export function ConfigSectionAdvanced({
   config,
   onSave,
@@ -57,8 +90,13 @@ export function ConfigSectionAdvanced({
 
   const handleCopyAutomationToken = async () => {
     if (!automationToken) return
-    await navigator.clipboard?.writeText(automationToken)
-    setCopied(true)
+    setCopied(false)
+    const copiedToken = await copyTextToClipboard(automationToken)
+    if (copiedToken) {
+      setCopied(true)
+    } else {
+      toast.error(t('config.copyAutomationTokenFailed'))
+    }
   }
 
   return (

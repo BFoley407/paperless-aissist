@@ -1,3 +1,5 @@
+import logging
+
 from app.database import get_session
 from app.models import Config
 from app.services import scheduler as scheduler_service
@@ -77,6 +79,25 @@ def test_automation_status_accepts_generated_token(client):
     assert data["success"] is True
     assert "is_processing" in data
     assert "automation_running" in data
+
+
+def test_automation_api_calls_are_logged_without_token(client, caplog):
+    headers, token = _automation_headers(client)
+    caplog.set_level(logging.INFO, logger="app.routers.automation")
+
+    client.get("/api/automation/status", headers=headers)
+    client.post("/api/automation/process/stop", headers=headers)
+    scheduler_service._set_processing(7)
+    try:
+        client.post("/api/automation/process/start", headers=headers)
+    finally:
+        scheduler_service._clear_processing()
+
+    log_text = caplog.text
+    assert "Automation API status requested" in log_text
+    assert "Automation API stop requested" in log_text
+    assert "Automation API start requested" in log_text
+    assert token not in log_text
 
 
 def test_automation_start_is_idempotent_when_processing_is_already_running(client):

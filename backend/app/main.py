@@ -50,9 +50,11 @@ def _attach_broadcast_handler():
         "app.services.paperless",
         "app.services.vision",
         "app.services.scheduler",
+        "app.services.automation",
         "app.routers.config",
         "app.routers.documents",
         "app.routers.scheduler",
+        "app.routers.automation",
     ):
         _logger = logging.getLogger(_name)
         _logger.disabled = False
