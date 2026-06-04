@@ -21,10 +21,7 @@ export function ConfigSectionScheduler({
   const [schedulerLoading, setSchedulerLoading] = useState(false)
 
   const label = 'block text-sm font-medium text-gray-700 mb-1'
-  const currentDocumentUrl = buildPaperlessDocumentUrl(
-    config.paperless_url || schedulerStatus?.paperless_url,
-    schedulerStatus?.current_doc_id,
-  )
+  const currentDocumentIds = schedulerStatus?.current_document_ids || []
 
   const loadSchedulerStatus = useCallback(async () => {
     try {
@@ -146,20 +143,32 @@ export function ConfigSectionScheduler({
         )}
       </div>
 
-      {schedulerStatus?.is_processing && schedulerStatus.current_doc_id && (
+      {schedulerStatus?.is_processing && currentDocumentIds.length > 0 && (
         <div className="text-sm text-blue-600">
-          {currentDocumentUrl ? (
-            <a
-              href={currentDocumentUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline"
-            >
-              {t('config.schedulerCurrentDoc', { id: schedulerStatus.current_doc_id })}
-            </a>
-          ) : (
-            t('config.schedulerCurrentDoc', { id: schedulerStatus.current_doc_id })
-          )}
+          {currentDocumentIds.map((documentId, index) => {
+            const currentDocumentUrl = buildPaperlessDocumentUrl(
+              config.paperless_url || schedulerStatus?.paperless_url,
+              documentId,
+            )
+            const label = t('config.schedulerCurrentDoc', { id: documentId })
+            return (
+              <span key={documentId}>
+                {index > 0 && <span className="mx-1">·</span>}
+                {currentDocumentUrl ? (
+                  <a
+                    href={currentDocumentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    {label}
+                  </a>
+                ) : (
+                  label
+                )}
+              </span>
+            )
+          })}
         </div>
       )}
 

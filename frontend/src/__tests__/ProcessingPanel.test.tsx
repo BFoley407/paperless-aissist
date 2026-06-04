@@ -86,7 +86,8 @@ describe('ProcessingPanel', () => {
         interval_minutes: 5,
         next_run: null,
         is_processing: false,
-        current_doc_id: null,
+        current_document_ids: [],
+        active_documents: [],
       },
     })
   })

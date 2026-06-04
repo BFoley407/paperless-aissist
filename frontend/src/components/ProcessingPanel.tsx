@@ -260,10 +260,7 @@ export default function ProcessingPanel() {
   }
 
   const isCurrentlyProcessing = schedulerStatus?.is_processing || processing
-  const currentDocumentUrl = buildPaperlessDocumentUrl(
-    schedulerStatus?.paperless_url || paperlessUrl,
-    schedulerStatus?.current_doc_id,
-  )
+  const currentDocumentIds = schedulerStatus?.current_document_ids || []
   const filteredSteps =
     resultStepFilter === 'all'
       ? result?.steps || []
@@ -278,22 +275,28 @@ export default function ProcessingPanel() {
             <span className="font-medium text-blue-700">
               {t('processing.processingInProgress')}
             </span>
-            {schedulerStatus?.current_doc_id && (
-              currentDocumentUrl ? (
+            {currentDocumentIds.map((documentId) => {
+              const currentDocumentUrl = buildPaperlessDocumentUrl(
+                schedulerStatus?.paperless_url || paperlessUrl,
+                documentId,
+              )
+              const label = t('processing.currentDoc', { id: documentId })
+              return currentDocumentUrl ? (
                 <a
+                  key={documentId}
                   href={currentDocumentUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="text-blue-600 text-sm ml-2 underline"
                 >
-                  {t('processing.currentDoc', { id: schedulerStatus.current_doc_id })}
+                  {label}
                 </a>
               ) : (
-                <span className="text-blue-600 text-sm ml-2">
-                  {t('processing.currentDoc', { id: schedulerStatus.current_doc_id })}
+                <span key={documentId} className="text-blue-600 text-sm ml-2">
+                  {label}
                 </span>
               )
-            )}
+            })}
           </div>
         </div>
       )}

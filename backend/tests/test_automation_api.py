@@ -79,6 +79,109 @@ def test_automation_status_accepts_generated_token(client):
     assert data["success"] is True
     assert "is_processing" in data
     assert "automation_running" in data
+    assert "current_doc_id" not in data
+
+
+def test_automation_status_reports_active_documents_with_runtime(client):
+    headers, _ = _automation_headers(client)
+    scheduler_service._set_processing()
+    scheduler_service.mark_document_started(
+        1048,
+        trigger_tags=["ai-ocr", "force_ocr"],
+        trigger_mode="ai-ocr",
+        active_step="ocr",
+    )
+
+    try:
+        response = client.get("/api/automation/status", headers=headers)
+    finally:
+        scheduler_service._clear_processing()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["is_processing"] is True
+    assert data["current_document_ids"] == [1048]
+    assert "current_doc_id" not in data
+    assert data["started_at"]
+    assert data["running_seconds"] >= 0
+
+    active_document = data["active_documents"][0]
+    assert active_document["document_id"] == 1048
+    assert active_document["trigger_tags"] == ["ai-ocr", "force_ocr"]
+    assert active_document["trigger_mode"] == "ai-ocr"
+    assert active_document["active_step"] == "ocr"
+    assert active_document["running_seconds"] >= 0
+
+
+def test_processing_state_tracks_multiple_active_documents():
+    scheduler_service._set_processing()
+    scheduler_service.mark_document_started(
+        101,
+        trigger_tags=["ai-ocr"],
+        trigger_mode="ai-ocr",
+    )
+    scheduler_service.mark_document_started(
+        102,
+        trigger_tags=["ai-process"],
+        trigger_mode="ai-process",
+    )
+
+    try:
+        state = scheduler_service.get_processing_state()
+        assert state["current_document_ids"] == [101, 102]
+        assert "current_doc_id" not in state
+
+        scheduler_service.mark_document_finished(101)
+        state = scheduler_service.get_processing_state()
+        assert state["current_document_ids"] == [102]
+        assert "current_doc_id" not in state
+    finally:
+        scheduler_service._clear_processing()
+
+
+def test_automation_start_preserves_previous_last_result(client, monkeypatch):
+    from app.services import automation as automation_service
+
+    last_completed_result = {
+        "success": True,
+        "status": "completed",
+        "processed": 1,
+        "failed": 0,
+        "results": [{"document_id": 7, "success": True}],
+    }
+    automation_service._last_result = last_completed_result
+
+    async def slow_legacy_processing():
+        import asyncio
+
+        await asyncio.sleep(1)
+        return {"success": True, "processed": 0, "failed": 0, "results": []}
+
+    async def skipped_modular_processing():
+        return {"success": True, "processed": 0, "failed": 0, "results": []}
+
+    monkeypatch.setattr(
+        automation_service, "process_tagged_documents", slow_legacy_processing
+    )
+    monkeypatch.setattr(
+        automation_service,
+        "process_modular_tagged_documents",
+        skipped_modular_processing,
+    )
+    headers, _ = _automation_headers(client)
+
+    try:
+        start_response = client.post("/api/automation/process/start", headers=headers)
+        status_response = client.get("/api/automation/status", headers=headers)
+    finally:
+        client.post("/api/automation/process/stop", headers=headers)
+        scheduler_service._clear_processing()
+        automation_service._last_result = None
+
+    assert start_response.status_code == 200
+    data = status_response.json()
+    assert data["last_result"] == last_completed_result
+    assert "previous_result" not in data
 
 
 def test_automation_api_calls_are_logged_without_token(client, caplog):

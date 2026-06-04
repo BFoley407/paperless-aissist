@@ -83,6 +83,16 @@ export interface SchedulerStatus {
   interval_minutes: number | null
   next_run: string | null
   is_processing: boolean
-  current_doc_id: number | null
+  current_document_ids?: number[]
+  active_documents?: Array<{
+    document_id: number
+    trigger_tags?: string[]
+    trigger_mode?: string | null
+    active_step?: string | null
+    started_at?: string | null
+    running_seconds?: number | null
+  }>
+  started_at?: string | null
+  running_seconds?: number | null
   paperless_url?: string | null
 }

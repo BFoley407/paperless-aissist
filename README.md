@@ -142,6 +142,10 @@ Available endpoints:
 
 `start` is idempotent: if processing is already running, it returns `already_running` instead of starting a second run. The Automation API token is required even when web UI login is disabled.
 
+The status response includes `is_processing`, `current_document_ids`,
+`active_documents` with trigger tags, active step, and runtime, plus the last
+completed automation result.
+
 Home Assistant example:
 
 ```yaml

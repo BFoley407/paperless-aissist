@@ -328,6 +328,12 @@ Available Custom Fields: [{custom_fields_list}]"""
         try:
             return await self._process_document_step_based(doc_id)
         finally:
+            try:
+                from .scheduler import mark_document_finished
+
+                mark_document_finished(doc_id)
+            except Exception as state_error:
+                logger.debug("Could not clear active document state: %s", state_error)
             async with _in_flight_lock:
                 _in_flight_docs.discard(doc_id)
 
@@ -511,6 +517,35 @@ Available Custom Fields: [{custom_fields_list}]"""
             if tag_id_to_name.get(tid, "") in modular_tag_names
         ]
 
+    @staticmethod
+    def _get_processing_trigger_metadata(
+        doc_tag_names: set[str],
+        config_dict: dict[str, str],
+    ) -> dict[str, Any]:
+        """Return the active trigger tags before they are removed from Paperless."""
+        candidate_tags = [
+            config_dict.get("force_ocr_tag") or "force_ocr",
+            config_dict.get("force_ocr_fix_tag") or "force-ocr-fix",
+        ]
+        for config_key, default in MODULAR_TAG_DEFAULTS.items():
+            candidate_tags.append(config_dict.get(config_key) or default)
+
+        process_tag = config_dict.get("process_tag")
+        if process_tag:
+            candidate_tags.append(process_tag)
+
+        trigger_tags = []
+        seen = set()
+        for tag in candidate_tags:
+            if tag in doc_tag_names and tag not in seen:
+                trigger_tags.append(tag)
+                seen.add(tag)
+
+        return {
+            "trigger_tags": trigger_tags,
+            "trigger_mode": trigger_tags[0] if trigger_tags else None,
+        }
+
     async def _process_document_step_based(self, doc_id: int) -> dict[str, Any]:
         start_time = time.time()
 
@@ -536,6 +571,22 @@ Available Custom Fields: [{custom_fields_list}]"""
 
         step_instances = await self._build_steps()
         config_dict = await self._get_config_dict()
+        trigger_metadata = self._get_processing_trigger_metadata(
+            doc_tag_names,
+            config_dict,
+        )
+        try:
+            from .scheduler import get_processing_state, mark_document_started
+
+            if get_processing_state().get("is_processing"):
+                mark_document_started(
+                    doc_id,
+                    trigger_tags=trigger_metadata["trigger_tags"],
+                    trigger_mode=trigger_metadata["trigger_mode"],
+                )
+        except Exception as state_error:
+            logger.debug("Could not update active document state: %s", state_error)
+
         from .llm_handler import LLMHandlerManager
 
         llm = await LLMHandlerManager.get_handler(for_vision=False)
@@ -577,6 +628,15 @@ Available Custom Fields: [{custom_fields_list}]"""
                     continue
 
                 logger.info(f"  → Step {step_instance.name} for doc {doc_id}")
+                try:
+                    from .scheduler import update_active_document
+
+                    update_active_document(doc_id, active_step=step_instance.name)
+                except Exception as state_error:
+                    logger.debug(
+                        "Could not update active document step: %s",
+                        state_error,
+                    )
                 step_start = time.time()
                 try:
                     result = await step_instance.execute(ctx)
@@ -638,7 +698,15 @@ Available Custom Fields: [{custom_fields_list}]"""
         except LLMUnavailableError as e:
             await self._delete_log(log_id)
             logger.warning(f"LLM unavailable for doc {doc_id}, will retry: {e}")
-            return {"success": False, "error": str(e), "retryable": True}
+            return {
+                "success": False,
+                "document_id": doc_id,
+                "title": doc.get("title"),
+                "trigger_tags": trigger_metadata["trigger_tags"],
+                "trigger_mode": trigger_metadata["trigger_mode"],
+                "error": str(e),
+                "retryable": True,
+            }
 
         failed_steps = [step for step in step_records if step["status"] == "failed"]
         if failed_steps:
@@ -668,6 +736,8 @@ Available Custom Fields: [{custom_fields_list}]"""
                 "success": False,
                 "document_id": doc_id,
                 "title": doc.get("title"),
+                "trigger_tags": trigger_metadata["trigger_tags"],
+                "trigger_mode": trigger_metadata["trigger_mode"],
                 "updates": {},
                 "processing_time_ms": processing_time_ms,
                 "steps": step_records,
@@ -848,6 +918,8 @@ Available Custom Fields: [{custom_fields_list}]"""
                 "success": False,
                 "document_id": doc_id,
                 "title": doc.get("title"),
+                "trigger_tags": trigger_metadata["trigger_tags"],
+                "trigger_mode": trigger_metadata["trigger_mode"],
                 "updates": {},
                 "processing_time_ms": processing_time_ms,
                 "steps": step_records,
@@ -873,6 +945,8 @@ Available Custom Fields: [{custom_fields_list}]"""
             "success": True,
             "document_id": doc_id,
             "title": doc.get("title"),
+            "trigger_tags": trigger_metadata["trigger_tags"],
+            "trigger_mode": trigger_metadata["trigger_mode"],
             "updates": {},
             "processing_time_ms": processing_time_ms,
             "steps": step_records,

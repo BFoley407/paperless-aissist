@@ -10,7 +10,7 @@ from typing import Optional
 
 from .scheduler import (
     _clear_processing,
-    is_currently_processing,
+    get_processing_state,
     process_modular_tagged_documents,
     process_tagged_documents,
     try_trigger_processing,
@@ -66,7 +66,7 @@ async def _run_process_all() -> None:
 
 async def start_automation_processing() -> dict:
     """Start process-all in the background, or report the existing run."""
-    global _automation_task, _last_result
+    global _automation_task
 
     if _is_automation_task_running():
         return {
@@ -79,7 +79,6 @@ async def start_automation_processing() -> dict:
     if not success:
         return {"success": True, "status": "already_running", "message": message}
 
-    _last_result = None
     _automation_task = asyncio.create_task(_run_process_all())
     return {"success": True, "status": "started", "message": "Processing started"}
 
@@ -104,11 +103,14 @@ async def stop_automation_processing() -> dict:
 
 def get_automation_status() -> dict:
     """Return current process state and the last automation result."""
-    is_processing, current_doc_id = is_currently_processing()
+    processing_state = get_processing_state()
     return {
         "success": True,
-        "is_processing": is_processing,
-        "current_doc_id": current_doc_id,
+        "is_processing": processing_state["is_processing"],
+        "current_document_ids": processing_state["current_document_ids"],
+        "active_documents": processing_state["active_documents"],
+        "started_at": processing_state["started_at"],
+        "running_seconds": processing_state["running_seconds"],
         "automation_running": _is_automation_task_running(),
         "last_result": _last_result,
     }
