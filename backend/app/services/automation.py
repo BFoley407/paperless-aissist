@@ -26,6 +26,21 @@ def _is_automation_task_running() -> bool:
     return _automation_task is not None and not _automation_task.done()
 
 
+def _compact_result_for_status(result: dict) -> dict:
+    """Remove heavy fields from results returned by the Automation API status."""
+    compact = dict(result)
+    compact.pop("proposed_changes", None)
+    return compact
+
+
+def _compact_results_for_status(results: list) -> list[dict]:
+    return [
+        _compact_result_for_status(result)
+        for result in results
+        if isinstance(result, dict)
+    ]
+
+
 async def _run_process_all() -> None:
     global _last_result
 
@@ -34,12 +49,13 @@ async def _run_process_all() -> None:
         legacy = await process_tagged_documents()
         modular = await process_modular_tagged_documents()
         failed = legacy.get("failed", 0) + modular.get("failed", 0)
+        results = legacy.get("results", []) + modular.get("results", [])
         _last_result = {
             "success": failed == 0,
             "status": "completed",
             "processed": legacy.get("processed", 0) + modular.get("processed", 0),
             "failed": failed,
-            "results": legacy.get("results", []) + modular.get("results", []),
+            "results": _compact_results_for_status(results),
         }
         logger.info(
             "Automation API process-all run completed: processed=%s failed=%s",

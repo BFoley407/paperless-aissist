@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from app.database import get_session
 from app.models import Config
 from app.services import scheduler as scheduler_service
@@ -182,6 +184,57 @@ def test_automation_start_preserves_previous_last_result(client, monkeypatch):
     data = status_response.json()
     assert data["last_result"] == last_completed_result
     assert "previous_result" not in data
+
+
+@pytest.mark.asyncio
+async def test_automation_last_result_omits_proposed_changes(monkeypatch):
+    from app.services import automation as automation_service
+
+    async def legacy_processing():
+        return {
+            "success": True,
+            "processed": 1,
+            "failed": 0,
+            "results": [
+                {
+                    "success": True,
+                    "document_id": 42,
+                    "title": "Large tutorial",
+                    "proposed_changes": {
+                        "content": "large text " * 1000,
+                        "custom_fields": [
+                            {"id": 1, "name": "Topic", "value": "Automation"}
+                        ],
+                    },
+                    "processing_time_ms": 123,
+                }
+            ],
+        }
+
+    async def skipped_modular_processing():
+        return {"success": True, "processed": 0, "failed": 0, "results": []}
+
+    monkeypatch.setattr(
+        automation_service, "process_tagged_documents", legacy_processing
+    )
+    monkeypatch.setattr(
+        automation_service,
+        "process_modular_tagged_documents",
+        skipped_modular_processing,
+    )
+
+    try:
+        await automation_service._run_process_all()
+        status = automation_service.get_automation_status()
+    finally:
+        scheduler_service._clear_processing()
+        automation_service._last_result = None
+
+    result = status["last_result"]["results"][0]
+    assert result["document_id"] == 42
+    assert result["title"] == "Large tutorial"
+    assert result["processing_time_ms"] == 123
+    assert "proposed_changes" not in result
 
 
 def test_automation_api_calls_are_logged_without_token(client, caplog):
