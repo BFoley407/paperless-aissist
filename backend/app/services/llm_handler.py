@@ -18,6 +18,17 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_REFERER = "https://github.com/nyxtron/paperless-aissist"
 OPENROUTER_TITLE = "Paperless-AIssist"
 DEFAULT_TEMPERATURE = 0.3
+PROMPT_CONTROL_CHARS_TO_REMOVE = dict.fromkeys(
+    list(range(0x00, 0x09))
+    + list(range(0x0B, 0x0D))
+    + list(range(0x0E, 0x20))
+    + [0x7F]
+)
+
+
+def sanitize_prompt_text(text: str) -> str:
+    """Strip control characters that can break LLM chat endpoints."""
+    return text.translate(PROMPT_CONTROL_CHARS_TO_REMOVE)
 
 
 class LLMHandler:
@@ -190,6 +201,8 @@ class LLMHandler:
         Returns:
             A dict with "text"/"raw" keys on success.
         """
+        system_prompt = sanitize_prompt_text(system_prompt)
+        user_prompt = sanitize_prompt_text(user_prompt)
         effective_temperature = (
             self.temperature if temperature is None else temperature
         )
@@ -349,6 +362,8 @@ class LLMHandler:
         Returns:
             A dict with extracted "text" or "raw".
         """
+        system_prompt = sanitize_prompt_text(system_prompt)
+        user_prompt = sanitize_prompt_text(user_prompt)
         if images is None:
             images = []
         effective_temperature = (

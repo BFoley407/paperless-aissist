@@ -91,6 +91,39 @@ async def test_ollama_text_request_maps_max_tokens_to_num_predict():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "response_json"),
+    [
+        ("ollama", {"message": {"content": "ok"}}),
+        ("openai", {"choices": [{"message": {"content": "ok"}}]}),
+    ],
+)
+async def test_text_requests_strip_problematic_ascii_control_characters(
+    provider, response_json
+):
+    transport = CaptureTransport(response_json)
+    handler = LLMHandler(
+        provider=provider,
+        model="test-model",
+        api_base="http://llm.test",
+    )
+    handler._client = httpx.AsyncClient(
+        base_url=handler.api_base,
+        headers={"Content-Type": "application/json"},
+        transport=transport,
+    )
+
+    user_prompt = "Steuer\x11\x12bescheid\n\t\rBetrag\x1b\x7fEnde"
+
+    await handler.complete("System\x00Prompt", user_prompt, json_mode=False)
+    await handler.close()
+
+    payload = json.loads(transport.requests[0].content)
+    assert payload["messages"][0]["content"] == "SystemPrompt"
+    assert payload["messages"][1]["content"] == "Steuerbescheid\n\t\rBetragEnde"
+
+
+@pytest.mark.asyncio
 async def test_openai_compatible_vision_request_includes_generation_limits():
     transport = CaptureTransport({"choices": [{"message": {"content": "vision text"}}]})
     handler = LLMHandler(
