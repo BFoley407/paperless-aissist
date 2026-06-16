@@ -237,6 +237,53 @@ async def test_automation_last_result_omits_proposed_changes(monkeypatch):
     assert "proposed_changes" not in result
 
 
+@pytest.mark.asyncio
+async def test_automation_last_result_survives_service_restart(monkeypatch, tmp_path):
+    from app.services import automation as automation_service
+
+    async def legacy_processing():
+        return {
+            "success": True,
+            "processed": 1,
+            "failed": 0,
+            "results": [{"success": True, "document_id": 99}],
+        }
+
+    async def skipped_modular_processing():
+        return {"success": True, "processed": 0, "failed": 0, "results": []}
+
+    monkeypatch.setattr(
+        automation_service, "process_tagged_documents", legacy_processing
+    )
+    monkeypatch.setattr(
+        automation_service,
+        "process_modular_tagged_documents",
+        skipped_modular_processing,
+    )
+    monkeypatch.setattr(
+        automation_service,
+        "LAST_RESULT_FILE",
+        str(tmp_path / "automation_last_result.json"),
+        raising=False,
+    )
+
+    try:
+        await automation_service._run_process_all()
+        automation_service._last_result = None
+        status = automation_service.get_automation_status()
+    finally:
+        scheduler_service._clear_processing()
+        automation_service._last_result = None
+
+    assert status["last_result"] == {
+        "success": True,
+        "status": "completed",
+        "processed": 1,
+        "failed": 0,
+        "results": [{"success": True, "document_id": 99}],
+    }
+
+
 def test_automation_api_calls_are_logged_without_token(client, caplog):
     headers, token = _automation_headers(client)
     caplog.set_level(logging.INFO, logger="app.routers.automation")
