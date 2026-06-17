@@ -118,6 +118,7 @@ The main LLM and Vision OCR model each have their own generation settings:
 
 - **Temperature** controls randomness. Lower values are more deterministic; `0.0`–`0.3` is recommended for document metadata and OCR.
 - **Max Output Tokens** optionally limits response length. Leave it empty to use the provider default. For Ollama, this is sent as `num_predict`; for OpenAI-compatible providers it is sent as `max_tokens`.
+- **Context Window** is Ollama-only and maps to `num_ctx`. Increase it for large documents, many correspondents/tags, or long prompts. Leave it empty to use the model default. This is different from Max Output Tokens: `num_ctx` controls how much input context the model can see, while `num_predict` controls how long the answer may be.
 
 ## Automation API
 
@@ -193,6 +194,10 @@ Pull Ollama models before use:
 ollama pull qwen3:8b
 ollama pull benhaotang/Nanonets-OCR-s:latest
 ```
+
+If Ollama returns `400 Bad Request` for large documents or Paperless instances
+with many correspondents/tags, increase the **Context Window** setting in the
+web UI. This sends Ollama `num_ctx` for text and Vision OCR requests.
 
 ## Processing Pipeline
 
@@ -316,34 +321,50 @@ Once enabled, the UI redirects unauthenticated users to a login page. Sign in wi
 
 ## Comparison with Similar Projects
 
-Paperless AIssist is a flexible, web-UI-configured AI middleware for Paperless-ngx. Here's how it compares to the most popular alternatives (as of March 2026):
+Paperless-AIssist is not a replacement for Paperless-ngx. It is a small AI
+middleware that sits beside Paperless-ngx and adds tag-controlled processing,
+prompt management, Vision OCR, custom field extraction, chat, logs, and an
+Automation API.
 
-| Feature / Aspect                  | Paperless AIssist (nyxtron)                          | Paperless-AI (clusterzx)                            | Paperless-GPT (icereed)                             |
-|-----------------------------------|------------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------|
-| **Main Focus**                    | Tag-controlled Vision OCR, metadata classification, title generation, custom fields + Chat | Automated tagging, correspondent/type assignment, title + strong RAG chat | LLM-enhanced Vision OCR (superior for bad scans/handwriting) + basic tagging |
-| **Trigger Mechanism**             | Manual tag `ai-process` for metadata processing, `ai-ocr` for Vision OCR, or individual step tags (`ai-title`, `ai-tags`, etc.) + optional scheduler polling | Automatic on upload / consumable + queue           | Automatic / manual + web UI review                  |
-| **OCR Capabilities**              | Strong Vision OCR (images/PDF pages) + optional LLM post-processing for error correction | Uses standard Paperless-ngx Tesseract OCR           | Excellent LLM Vision OCR (context-aware, self-correcting) |
-| **Supported Vision Models**       | Ollama (e.g. Nanonets-OCR-s, qwen2.5vl), OpenAI (gpt-4o), Grok (grok-2-vision) | None (no native vision enhancement)                 | Ollama (MiniCPM-V etc.), OpenAI (gpt-4o), others    |
-| **Text LLM Support**              | Ollama, OpenAI (gpt-4o-mini), Grok (grok-3-mini), any OpenAI-compatible | Ollama, OpenAI, DeepSeek, Gemini, many others       | Ollama, OpenAI, Anthropic, Gemini, Mistral          |
-| **Separate Models for Text & Vision** | Yes (different providers/keys possible)             | No                                                  | Partial (OCR often uses vision-capable model)       |
-| **Custom Fields Extraction**      | Very strong: global + type-specific prompts, merged results | Basic support                                       | Yes, automatic + customizable                       |
-| **Classification Mode**           | Individual (separate steps for correspondent, type, tags – recommended for accuracy) or combined | Combined prompts + rules                            | Combined + customizable prompts                     |
-| **Document Chat (RAG/Q&A)**       | Yes, integrated in web UI                            | Yes, very mature & user-friendly RAG chat           | No / very limited                                   |
-| **Configuration**                 | 100% via modern web UI (React + FastAPI), no env vars needed, SQLite persistence | Env vars + config files + web dashboard             | Env vars + some web UI                              |
-| **Web UI**                        | Full-featured: Settings, Prompts editor, Logs, Chat | Dashboard + manual tagging queue + chat             | Basic review & ad-hoc analysis UI                   |
-| **i18n / UI Language**            | Yes (English + German)                               | No                                                  | No                                                  |
-| **Authentication**                | Optional (Paperless-ngx credentials, off by default) | No                                                  | No                                                  |
-| **Grok (xAI) Support**            | Yes (text + vision)                                  | No                                                  | No                                                  |
-| **Installation**                  | Single Docker container, very easy                   | Docker-compose                                      | Docker                                              |
-| **Development Stage**             | Very new (early 2026), active, MIT license           | Mature, very active, large community (~5k stars)    | Active, established niche for OCR                   |
-| **Best For**                      | Users wanting maximum prompt flexibility, hybrid local/cloud (incl. Grok), type-specific fields, easy config | Stable auto-tagging + excellent chat/RAG            | Challenging scans, best raw OCR accuracy            |
+Think of it as the flexible toolbox approach: modular tags, prompt control,
+separate text and vision models, type-specific extraction, and an Automation API
+let you build exactly the workflow you want around Paperless-ngx.
 
-**Quick Recommendation**
-- Want **maximum flexibility** (separate models, Grok, type-specific extraction, zero env-var hassle)? → Try **Paperless-AIssist**
-- Need **rock-solid chat** and proven auto-tagging? → Paperless-AI
-- Fighting **poor scans/handwriting**? → Paperless-GPT (or combine with one of the others)
+This comparison is meant as a practical orientation, not as a ranking. The
+related projects make different trade-offs and may be the better fit depending
+on your workflow.
 
-Feedback, issues & PRs are very welcome — it's early days!
+| Project | Main role | Strong fit | Notes |
+|---------|-----------|------------|-------|
+| **Paperless-AIssist** | AI middleware for Paperless-ngx | Modular tag workflows, configurable prompts, Vision OCR, separate text/vision models, type-specific custom fields, Automation API, local/cloud hybrid setups | Designed for users who want explicit control over what runs and when |
+| [**Paperless-ngx**](https://github.com/paperless-ngx/paperless-ngx) | Core document management system | Stable archive, ingestion, OCR, search, workflows, permissions, official API | Paperless-ngx `v3.0.0-beta.rc1` adds native Paperless AI and Remote OCR (Azure AI), so some AI use cases may become built-in |
+| [**paperless-ai-next**](https://github.com/admonstrator/paperless-ai-next) | Next-generation Paperless-AI fork | Automated AI classification, OCR rescue workflows, history/rescan flows, performance improvements for larger setups | Good fit if you want a more automated Paperless-AI-style assistant with less step-by-step control |
+| [**Paperless-AI**](https://github.com/clusterzx/paperless-ai) | AI extension with automation and RAG chat | Automatic document classification, tagging, titles, rules, semantic document chat | The upstream README currently notes that the original project is not actively maintained while a rewrite is considered |
+| [**paperless-gpt**](https://github.com/icereed/paperless-gpt) | OCR and AI enhancement companion | LLM-based OCR, OCR providers, searchable/selectable PDFs, title/tag/correspondent/custom field suggestions, manual review | Strong choice when OCR quality and PDF text-layer workflows are the primary problem |
+
+### When Paperless-AIssist Fits Best
+
+Choose Paperless-AIssist if you want:
+
+- Tag-controlled processing: run the full pipeline with `ai-process`, Vision OCR with `ai-ocr`, or only specific steps such as `ai-title`, `ai-date`, or `ai-fields`.
+- A web UI for configuration and prompts instead of editing environment variables for normal day-to-day changes.
+- Separate text and Vision OCR model/provider settings, for example local Ollama for metadata and OpenAI/OpenRouter/Grok for selected OCR jobs.
+- Type-specific custom field extraction where different document types can use different prompts.
+- A lightweight Automation API for cron, Home Assistant, or custom scripts.
+- Explicit opt-in Vision OCR so expensive or slow OCR calls only run when tagged.
+
+### When Another Tool May Fit Better
+
+- Use native **Paperless-ngx** AI features if you prefer everything inside the
+  main Paperless-ngx application and do not need external middleware.
+- Use **paperless-ai-next** if you want a more automatic AI assistant with
+  Paperless-AI-style workflows, OCR rescue queues, and operational polish.
+- Use **Paperless-AI** if you already rely on its RAG/chat workflow and it works
+  well in your setup.
+- Use **paperless-gpt** if your main goal is high-quality OCR enhancement,
+  searchable PDF generation, and reviewable OCR/metadata suggestions.
+
+Feedback, issues & PRs are very welcome.
 
 ## License
 

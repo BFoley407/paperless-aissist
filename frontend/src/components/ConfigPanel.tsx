@@ -53,6 +53,8 @@ export default function ConfigPanel() {
     llm_temperature_vision: '0.3',
     llm_max_tokens: '',
     llm_max_tokens_vision: '',
+    llm_num_ctx: '',
+    llm_num_ctx_vision: '',
     log_level: 'INFO',
     ocr_fix_max_chars: '10000',
     document_list_refresh_mode: 'automatic',

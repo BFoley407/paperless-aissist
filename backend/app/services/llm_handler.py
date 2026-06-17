@@ -42,6 +42,7 @@ class LLMHandler:
         timeout: Request timeout in seconds.
         temperature: Default sampling temperature for requests.
         max_tokens: Optional default output token limit.
+        num_ctx: Optional Ollama context window size.
     """
 
     def __init__(
@@ -53,6 +54,7 @@ class LLMHandler:
         timeout: float = 600.0,
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: Optional[int] = None,
+        num_ctx: Optional[int] = None,
     ):
         self.provider = provider
         self.model = model
@@ -61,6 +63,7 @@ class LLMHandler:
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.num_ctx = num_ctx
         self._client: Optional[httpx.AsyncClient] = None
         self._closed = False
 
@@ -140,6 +143,11 @@ class LLMHandler:
             max_tokens_str = await cls._get_config("llm_max_tokens")
         max_tokens = cls._parse_max_tokens(max_tokens_str)
 
+        num_ctx_str = await cls._get_config(f"llm_num_ctx{suffix}")
+        if for_vision and not num_ctx_str:
+            num_ctx_str = await cls._get_config("llm_num_ctx")
+        num_ctx = cls._parse_positive_int(num_ctx_str)
+
         logger.info(f"Provider: {provider}, Model: {model}, API Base: {api_base}")
 
         return cls(
@@ -150,6 +158,7 @@ class LLMHandler:
             timeout=timeout,
             temperature=temperature,
             max_tokens=max_tokens,
+            num_ctx=num_ctx,
         )
 
     @staticmethod
@@ -173,13 +182,17 @@ class LLMHandler:
 
     @staticmethod
     def _parse_max_tokens(value: Optional[str]) -> Optional[int]:
+        return LLMHandler._parse_positive_int(value)
+
+    @staticmethod
+    def _parse_positive_int(value: Optional[str]) -> Optional[int]:
         if not value:
             return None
         try:
-            max_tokens = int(value)
+            parsed = int(value)
         except (TypeError, ValueError):
             return None
-        return max_tokens if max_tokens > 0 else None
+        return parsed if parsed > 0 else None
 
     async def complete(
         self,
@@ -215,6 +228,7 @@ class LLMHandler:
                 json_mode,
                 effective_temperature,
                 effective_max_tokens,
+                self.num_ctx,
             )
         elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_complete(
@@ -236,6 +250,7 @@ class LLMHandler:
         json_mode: bool,
         temperature: float,
         max_tokens: Optional[int],
+        num_ctx: Optional[int],
     ) -> dict[str, Any]:
         """Internal Ollama /api/chat implementation."""
         client = self.client
@@ -260,6 +275,8 @@ class LLMHandler:
         }
         if max_tokens is not None:
             payload["options"]["num_predict"] = max_tokens
+        if num_ctx is not None:
+            payload["options"]["num_ctx"] = num_ctx
 
         if json_mode:
             payload["format"] = "json"
@@ -379,6 +396,7 @@ class LLMHandler:
                 json_mode,
                 effective_temperature,
                 effective_max_tokens,
+                self.num_ctx,
             )
         elif self.provider in OPENAI_COMPATIBLE_PROVIDERS:
             return await self._openai_vision_complete(
@@ -401,6 +419,7 @@ class LLMHandler:
         json_mode: bool = True,
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: Optional[int] = None,
+        num_ctx: Optional[int] = None,
     ) -> dict[str, Any]:
         """Ollama vision implementation — processes images page-by-page."""
         if images is None:
@@ -434,6 +453,8 @@ class LLMHandler:
             }
             if max_tokens is not None:
                 payload["options"]["num_predict"] = max_tokens
+            if num_ctx is not None:
+                payload["options"]["num_ctx"] = num_ctx
             if json_mode:
                 payload["format"] = "json"
 

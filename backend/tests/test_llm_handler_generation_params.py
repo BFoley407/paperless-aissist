@@ -91,6 +91,51 @@ async def test_ollama_text_request_maps_max_tokens_to_num_predict():
 
 
 @pytest.mark.asyncio
+async def test_ollama_text_request_maps_context_window_to_num_ctx():
+    transport = CaptureTransport({"message": {"content": "ok"}})
+    handler = LLMHandler(
+        provider="ollama",
+        model="qwen3:8b",
+        api_base="http://ollama.test",
+        num_ctx=16384,
+    )
+    handler._client = httpx.AsyncClient(
+        base_url=handler.api_base,
+        headers={"Content-Type": "application/json"},
+        transport=transport,
+    )
+
+    await handler.complete("system", "user", json_mode=False)
+    await handler.close()
+
+    payload = json.loads(transport.requests[0].content)
+    assert payload["options"]["num_ctx"] == 16384
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_text_request_omits_context_window():
+    transport = CaptureTransport({"choices": [{"message": {"content": "ok"}}]})
+    handler = LLMHandler(
+        provider="openai",
+        model="gpt-4o-mini",
+        api_base="http://openai.test/v1",
+        num_ctx=16384,
+    )
+    handler._client = httpx.AsyncClient(
+        base_url=handler.api_base,
+        headers={"Content-Type": "application/json"},
+        transport=transport,
+    )
+
+    await handler.complete("system", "user", json_mode=False)
+    await handler.close()
+
+    payload = json.loads(transport.requests[0].content)
+    assert "num_ctx" not in payload
+    assert "options" not in payload
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider", "response_json"),
     [
@@ -153,6 +198,33 @@ async def test_openai_compatible_vision_request_includes_generation_limits():
 
 
 @pytest.mark.asyncio
+async def test_ollama_vision_request_maps_context_window_to_num_ctx():
+    transport = CaptureTransport({"message": {"content": "vision text"}})
+    handler = LLMHandler(
+        provider="ollama",
+        model="qwen2.5vl:7b",
+        api_base="http://ollama.test",
+        num_ctx=32768,
+    )
+    handler._client = httpx.AsyncClient(
+        base_url=handler.api_base,
+        headers={"Content-Type": "application/json"},
+        transport=transport,
+    )
+
+    result = await handler.vision_complete(
+        system_prompt="Extract text",
+        images=[b"page"],
+        json_mode=False,
+    )
+    await handler.close()
+
+    payload = json.loads(transport.requests[0].content)
+    assert result == {"text": "vision text"}
+    assert payload["options"]["num_ctx"] == 32768
+
+
+@pytest.mark.asyncio
 async def test_from_config_reads_generation_limits(monkeypatch):
     async def fake_get_config(key):
         values = {
@@ -163,6 +235,7 @@ async def test_from_config_reads_generation_limits(monkeypatch):
             "llm_timeout": "45",
             "llm_temperature": "0.15",
             "llm_max_tokens": "777",
+            "llm_num_ctx": "16384",
         }
         return values.get(key)
 
@@ -172,6 +245,7 @@ async def test_from_config_reads_generation_limits(monkeypatch):
 
     assert handler.temperature == 0.15
     assert handler.max_tokens == 777
+    assert handler.num_ctx == 16384
 
 
 @pytest.mark.asyncio
@@ -185,6 +259,7 @@ async def test_vision_from_config_falls_back_to_main_generation_limits(monkeypat
             "llm_timeout": "60",
             "llm_temperature": "0.25",
             "llm_max_tokens": "2048",
+            "llm_num_ctx": "16384",
             "llm_provider_vision": "",
             "llm_model_vision": "gpt-4o",
             "llm_api_base_vision": "",
@@ -192,6 +267,7 @@ async def test_vision_from_config_falls_back_to_main_generation_limits(monkeypat
             "llm_timeout_vision": "",
             "llm_temperature_vision": "",
             "llm_max_tokens_vision": "",
+            "llm_num_ctx_vision": "",
         }
         return values.get(key)
 
@@ -201,3 +277,37 @@ async def test_vision_from_config_falls_back_to_main_generation_limits(monkeypat
 
     assert handler.temperature == 0.25
     assert handler.max_tokens == 2048
+    assert handler.num_ctx == 16384
+
+
+@pytest.mark.asyncio
+async def test_vision_from_config_reads_vision_specific_context_window(monkeypatch):
+    async def fake_get_config(key):
+        values = {
+            "llm_provider": "ollama",
+            "llm_model": "qwen3:8b",
+            "llm_api_base": "http://localhost:11434",
+            "llm_api_key": "",
+            "llm_timeout": "60",
+            "llm_temperature": "0.3",
+            "llm_max_tokens": "",
+            "llm_num_ctx": "16384",
+            "llm_provider_vision": "ollama",
+            "llm_model_vision": "qwen2.5vl:7b",
+            "llm_api_base_vision": "http://localhost:11434",
+            "llm_api_key_vision": "",
+            "llm_timeout_vision": "120",
+            "llm_temperature_vision": "0.1",
+            "llm_max_tokens_vision": "4096",
+            "llm_num_ctx_vision": "32768",
+        }
+        return values.get(key)
+
+    monkeypatch.setattr(LLMHandler, "_get_config", staticmethod(fake_get_config))
+
+    handler = await LLMHandler.from_config(for_vision=True)
+
+    assert handler.model == "qwen2.5vl:7b"
+    assert handler.temperature == 0.1
+    assert handler.max_tokens == 4096
+    assert handler.num_ctx == 32768
