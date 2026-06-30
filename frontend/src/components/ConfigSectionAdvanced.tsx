@@ -106,7 +106,7 @@ export function ConfigSectionAdvanced({
         <h2 className="text-lg font-semibold text-gray-800">{t('config.applicationSection')}</h2>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="flex flex-wrap gap-4">
         <div className="w-48">
           <label className={labelClass}>{t('config.logLevel')}</label>
           <select
@@ -179,7 +179,7 @@ export function ConfigSectionAdvanced({
           />
           <p className={hintClass}>{t('config.ocrFixMaxCharsHint')}</p>
         </div>
-        <div className="md:col-span-2 border-t pt-4 mt-2">
+        <div className="w-full border-t pt-4 mt-2">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">

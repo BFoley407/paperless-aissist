@@ -7,6 +7,7 @@ Create Date: 2026-04-21
 """
 
 from alembic import op
+from sqlalchemy import inspect
 
 revision = "002"
 down_revision = "6108ef3356a6"
@@ -15,9 +16,14 @@ depends_on = None
 
 
 def upgrade():
-    op.create_index("ix_log_document_id", "processing_logs", ["document_id"])
-    op.create_index("ix_log_status", "processing_logs", ["status"])
-    op.create_index("ix_log_processed_at", "processing_logs", ["processed_at"])
+    existing = {ix["name"] for ix in inspect(op.get_bind()).get_indexes("processing_logs")}
+    for name, col in (
+        ("ix_log_document_id", "document_id"),
+        ("ix_log_status", "status"),
+        ("ix_log_processed_at", "processed_at"),
+    ):
+        if name not in existing:
+            op.create_index(name, "processing_logs", [col])
 
 
 def downgrade():
