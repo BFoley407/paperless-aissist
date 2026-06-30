@@ -1,21 +1,26 @@
 # Paperless-AIssist
 
-AI-powered document processing middleware for [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx).
+AI document processing for [Paperless-ngx](https://github.com/paperless-ngx/paperless-ngx) that you control, step by step.
 
-Tag a document with `ai-process` and it gets automatically classified, titled, tagged, and enriched with custom fields. Works with [Ollama](https://ollama.ai) (local), [OpenAI](https://openai.com), [Grok (xAI)](https://x.ai), and [OpenRouter](https://openrouter.ai).
+Paperless-AIssist lets you decide exactly what runs on each document: tag it with `ai-process` for the full pipeline, or use step tags like `ai-title`, `ai-ocr`, or `ai-fields` to run only the steps you need.
+
+Run metadata cheaply on local [Ollama](https://ollama.ai) and reserve a paid vision model for the documents you tag for OCR — text and vision models are configured separately. Works with Ollama (local), [OpenAI](https://openai.com), [Grok (xAI)](https://x.ai), and [OpenRouter](https://openrouter.ai).
 
 ## Features
 
+- **Modular tag workflows** — run only the steps you need per document (`ai-title`, `ai-ocr`, `ai-tags`, `ai-fields`, …), or the whole pipeline with `ai-process`
+- **Separate text & vision models** — keep metadata generation on a local Ollama model and reserve a paid vision model for the documents you tag for OCR; each is configured independently
+- **Configurable prompts** — every step is driven by prompts you edit in the web UI, with bundled samples to start from
 - **Correspondent, document type & tag classification** — LLM picks from your existing Paperless metadata
 - **Title generation** — replaces scanned filenames with meaningful titles
-- **Custom field extraction** — pulls structured data into Paperless custom fields
+- **Custom field extraction** — pulls structured data into Paperless custom fields, including optional per-document-type fields
 - **Vision OCR** — uses vision models (Ollama, OpenAI, Grok, OpenRouter) to read documents directly from page images
 - **OCR post-processing** — LLM corrects OCR errors before classification
 - **Document date detection** — updates the Paperless document date when a reliable original date is found
 - **Document chat** — ask questions about any document via the web UI
 - **Document search & preview** — search Paperless documents from the Chat page; preview what AI processing would do without modifying Paperless
+- **Automation API** — trigger, stop, and check processing from cron, Home Assistant, or custom scripts
 - **Auto-scheduler** — polls for new `ai-process` tagged documents on a configurable interval
-- **Modular tag workflows** — trigger only the steps you need per document (`ai-title`, `ai-tags`, `ai-fields`, etc.) instead of the full pipeline
 - **Multilingual UI** — web interface available in English and German
 - **Optional authentication** — protect the web UI with your Paperless-ngx credentials; disabled by default
 
@@ -117,6 +122,48 @@ The main LLM and Vision OCR model each have their own generation settings:
 
 - **Temperature** controls randomness. Lower values are more deterministic; `0.0`–`0.3` is recommended for document metadata and OCR.
 - **Max Output Tokens** optionally limits response length. Leave it empty to use the provider default. For Ollama, this is sent as `num_predict`; for OpenAI-compatible providers it is sent as `max_tokens`.
+- **Context Window** is Ollama-only and maps to `num_ctx`. Increase it for large documents, many correspondents/tags, or long prompts. Leave it empty to use the model default. This is different from Max Output Tokens: `num_ctx` controls how much input context the model can see, while `num_predict` controls how long the answer may be.
+
+## Automation API
+
+External tools can control the same "Process all" workflow that is available in the web UI. This is useful for cron jobs, webhook tools, custom scripts, and [Home Assistant RESTful Command](https://www.home-assistant.io/integrations/rest_command/) automations.
+
+Generate a dedicated token in **Settings → Advanced → Automation API**. The token is shown once and stored only as a hash.
+
+Use the token as a bearer token:
+
+```bash
+curl -H "Authorization: Bearer paia_..." \
+  http://localhost:8000/api/automation/status
+```
+
+Available endpoints:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/automation/status` | Current processing state and last automation result |
+| `POST` | `/api/automation/process/start` | Start processing tagged documents in the background |
+| `POST` | `/api/automation/process/stop` | Request stop for an automation-owned processing run |
+
+`start` is idempotent: if processing is already running, it returns `already_running` instead of starting a second run. The Automation API token is required even when web UI login is disabled.
+
+The status response includes `is_processing`, `current_document_ids`,
+`active_documents` with trigger tags, active step, and runtime. `last_result`
+contains the last completed Automation API run and is `null` until the first
+API-triggered run finishes. Live progress while a run is active is reported via
+`active_documents`.
+
+Home Assistant example:
+
+```yaml
+rest_command:
+  paperless_aissist_process_all:
+    url: "http://paperless-aissist.local:8000/api/automation/process/start"
+    method: post
+    headers:
+      Authorization: "Bearer paia_your_token_here"
+      Content-Type: "application/json"
+```
 
 ## Recommended Models
 
@@ -151,6 +198,10 @@ Pull Ollama models before use:
 ollama pull qwen3:8b
 ollama pull benhaotang/Nanonets-OCR-s:latest
 ```
+
+If Ollama returns `400 Bad Request` for large documents or Paperless instances
+with many correspondents/tags, increase the **Context Window** setting in the
+web UI. This sends Ollama `num_ctx` for text and Vision OCR requests.
 
 ## Processing Pipeline
 
@@ -265,6 +316,75 @@ Once enabled, the UI redirects unauthenticated users to a login page. Sign in wi
 | `GET /api/auth/me` | Returns the authenticated user info |
 | `POST /api/auth/logout` | Invalidates the token in the server cache |
 
+## MCP (Model Context Protocol)
+
+Paperless-AIssist exposes an MCP server so you can control document processing directly from Claude Desktop or any other MCP-compatible client.
+
+### Enable the MCP server
+
+Enable it in **Settings → Advanced → MCP Server** — it takes effect immediately, no restart needed. The server is off by default. You can also set the `MCP_ENABLED=true` environment variable as a fallback.
+
+Once enabled, the MCP endpoint is available at `/mcp/` (note the trailing slash) on the same port as the web UI. It uses the [streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http), so a persistent connection is not required.
+
+### Authentication
+
+All MCP requests must carry a valid Automation API token in the `Authorization` header. Generate a `paia_` token in **Settings → Advanced → Automation API** — the same token used for the REST Automation API.
+
+### Available tools
+
+| Tool | What it does |
+|------|-------------|
+| `list_pending` | List documents currently tagged for AI processing |
+| `list_prompts` | List all configured prompts |
+| `get_prompt` | Get the content of a specific prompt by name |
+| `get_status` | Get the current processing status and last run result |
+| `preview_processing` | Preview what AI processing would do to a document without modifying Paperless |
+| `process_document` | Trigger processing for a single document |
+| `process_all` | Start processing all pending tagged documents |
+| `stop_processing` | Request a stop for the current processing run |
+| `test_prompt` | Test a prompt against a document without writing any results |
+
+### Claude Desktop configuration
+
+Add the following to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "paperless-aissist": {
+      "url": "http://paperless-aissist.local:8000/mcp/",
+      "headers": { "Authorization": "Bearer paia_your_token_here" }
+    }
+  }
+}
+```
+
+Replace `paperless-aissist.local:8000` with the hostname and port where Paperless-AIssist is reachable from your desktop.
+
+### opencode
+
+Add the server to your `opencode.json`. Because it authenticates with a bearer token rather than OAuth, set `oauth` to `false`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "paperless-aissist": {
+      "type": "remote",
+      "url": "http://paperless-aissist.local:8000/mcp/",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer paia_your_token_here"
+      }
+    }
+  }
+}
+```
+
+opencode supports `{env:VAR}` interpolation in headers, so you can keep the token out of the file — for example `"Authorization": "Bearer {env:PAPERLESS_AISSIST_TOKEN}"`.
+
+Any MCP client that supports remote streamable-HTTP servers with custom headers can connect the same way — point it at `/mcp/` and send the `paia_` token as a `Bearer` `Authorization` header.
+
 ## Architecture
 
 - **Backend:** Python / FastAPI — processing pipeline, Ollama/OpenAI/Grok client, Paperless API client, APScheduler
@@ -274,34 +394,50 @@ Once enabled, the UI redirects unauthenticated users to a login page. Sign in wi
 
 ## Comparison with Similar Projects
 
-Paperless AIssist is a flexible, web-UI-configured AI middleware for Paperless-ngx. Here's how it compares to the most popular alternatives (as of March 2026):
+Paperless-AIssist is not a replacement for Paperless-ngx. It is a small AI
+middleware that sits beside Paperless-ngx and adds tag-controlled processing,
+prompt management, Vision OCR, custom field extraction, chat, logs, and an
+Automation API.
 
-| Feature / Aspect                  | Paperless AIssist (nyxtron)                          | Paperless-AI (clusterzx)                            | Paperless-GPT (icereed)                             |
-|-----------------------------------|------------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------|
-| **Main Focus**                    | Tag-controlled Vision OCR, metadata classification, title generation, custom fields + Chat | Automated tagging, correspondent/type assignment, title + strong RAG chat | LLM-enhanced Vision OCR (superior for bad scans/handwriting) + basic tagging |
-| **Trigger Mechanism**             | Manual tag `ai-process` for metadata processing, `ai-ocr` for Vision OCR, or individual step tags (`ai-title`, `ai-tags`, etc.) + optional scheduler polling | Automatic on upload / consumable + queue           | Automatic / manual + web UI review                  |
-| **OCR Capabilities**              | Strong Vision OCR (images/PDF pages) + optional LLM post-processing for error correction | Uses standard Paperless-ngx Tesseract OCR           | Excellent LLM Vision OCR (context-aware, self-correcting) |
-| **Supported Vision Models**       | Ollama (e.g. Nanonets-OCR-s, qwen2.5vl), OpenAI (gpt-4o), Grok (grok-2-vision) | None (no native vision enhancement)                 | Ollama (MiniCPM-V etc.), OpenAI (gpt-4o), others    |
-| **Text LLM Support**              | Ollama, OpenAI (gpt-4o-mini), Grok (grok-3-mini), any OpenAI-compatible | Ollama, OpenAI, DeepSeek, Gemini, many others       | Ollama, OpenAI, Anthropic, Gemini, Mistral          |
-| **Separate Models for Text & Vision** | Yes (different providers/keys possible)             | No                                                  | Partial (OCR often uses vision-capable model)       |
-| **Custom Fields Extraction**      | Very strong: global + type-specific prompts, merged results | Basic support                                       | Yes, automatic + customizable                       |
-| **Classification Mode**           | Individual (separate steps for correspondent, type, tags – recommended for accuracy) or combined | Combined prompts + rules                            | Combined + customizable prompts                     |
-| **Document Chat (RAG/Q&A)**       | Yes, integrated in web UI                            | Yes, very mature & user-friendly RAG chat           | No / very limited                                   |
-| **Configuration**                 | 100% via modern web UI (React + FastAPI), no env vars needed, SQLite persistence | Env vars + config files + web dashboard             | Env vars + some web UI                              |
-| **Web UI**                        | Full-featured: Settings, Prompts editor, Logs, Chat | Dashboard + manual tagging queue + chat             | Basic review & ad-hoc analysis UI                   |
-| **i18n / UI Language**            | Yes (English + German)                               | No                                                  | No                                                  |
-| **Authentication**                | Optional (Paperless-ngx credentials, off by default) | No                                                  | No                                                  |
-| **Grok (xAI) Support**            | Yes (text + vision)                                  | No                                                  | No                                                  |
-| **Installation**                  | Single Docker container, very easy                   | Docker-compose                                      | Docker                                              |
-| **Development Stage**             | Very new (early 2026), active, MIT license           | Mature, very active, large community (~5k stars)    | Active, established niche for OCR                   |
-| **Best For**                      | Users wanting maximum prompt flexibility, hybrid local/cloud (incl. Grok), type-specific fields, easy config | Stable auto-tagging + excellent chat/RAG            | Challenging scans, best raw OCR accuracy            |
+Think of it as the flexible toolbox approach: modular tags, prompt control,
+separate text and vision models, type-specific extraction, and an Automation API
+let you build exactly the workflow you want around Paperless-ngx.
 
-**Quick Recommendation**
-- Want **maximum flexibility** (separate models, Grok, type-specific extraction, zero env-var hassle)? → Try **Paperless-AIssist**
-- Need **rock-solid chat** and proven auto-tagging? → Paperless-AI
-- Fighting **poor scans/handwriting**? → Paperless-GPT (or combine with one of the others)
+This comparison is meant as a practical orientation, not as a ranking. The
+related projects make different trade-offs and may be the better fit depending
+on your workflow.
 
-Feedback, issues & PRs are very welcome — it's early days!
+| Project | Main role | Strong fit | Notes |
+|---------|-----------|------------|-------|
+| **Paperless-AIssist** | AI middleware for Paperless-ngx | Modular tag workflows, configurable prompts, Vision OCR, separate text/vision models, type-specific custom fields, Automation API, local/cloud hybrid setups | Designed for users who want explicit control over what runs and when |
+| [**Paperless-ngx**](https://github.com/paperless-ngx/paperless-ngx) | Core document management system | Stable archive, ingestion, OCR, search, workflows, permissions, official API | Paperless-ngx `v3.0.0-beta.rc1` adds native Paperless AI and Remote OCR (Azure AI), so some AI use cases may become built-in |
+| [**paperless-ai-next**](https://github.com/admonstrator/paperless-ai-next) | Next-generation Paperless-AI fork | Automated AI classification, OCR rescue workflows, history/rescan flows, performance improvements for larger setups | Good fit if you want a more automated Paperless-AI-style assistant with less step-by-step control |
+| [**Paperless-AI**](https://github.com/clusterzx/paperless-ai) | AI extension with automation and RAG chat | Automatic document classification, tagging, titles, rules, semantic document chat | The upstream README currently notes that the original project is not actively maintained while a rewrite is considered |
+| [**paperless-gpt**](https://github.com/icereed/paperless-gpt) | OCR and AI enhancement companion | LLM-based OCR, OCR providers, searchable/selectable PDFs, title/tag/correspondent/custom field suggestions, manual review | Strong choice when OCR quality and PDF text-layer workflows are the primary problem |
+
+### When Paperless-AIssist Fits Best
+
+Choose Paperless-AIssist if you want:
+
+- Tag-controlled processing: run the full pipeline with `ai-process`, Vision OCR with `ai-ocr`, or only specific steps such as `ai-title`, `ai-date`, or `ai-fields`.
+- A web UI for configuration and prompts instead of editing environment variables for normal day-to-day changes.
+- Separate text and Vision OCR model/provider settings, for example local Ollama for metadata and OpenAI/OpenRouter/Grok for selected OCR jobs.
+- Type-specific custom field extraction where different document types can use different prompts.
+- A lightweight Automation API for cron, Home Assistant, or custom scripts.
+- Explicit opt-in Vision OCR so expensive or slow OCR calls only run when tagged.
+
+### When Another Tool May Fit Better
+
+- Use native **Paperless-ngx** AI features if you prefer everything inside the
+  main Paperless-ngx application and do not need external middleware.
+- Use **paperless-ai-next** if you want a more automatic AI assistant with
+  Paperless-AI-style workflows, OCR rescue queues, and operational polish.
+- Use **Paperless-AI** if you already rely on its RAG/chat workflow and it works
+  well in your setup.
+- Use **paperless-gpt** if your main goal is high-quality OCR enhancement,
+  searchable PDF generation, and reviewable OCR/metadata suggestions.
+
+Feedback, issues & PRs are very welcome.
 
 ## License
 

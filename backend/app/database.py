@@ -72,29 +72,38 @@ def get_session() -> Generator[Session, None, None]:
             session.close()
 
 
-def run_migrations() -> None:
-    """Run Alembic migrations, stamping existing DBs if needed.
+def run_migrations(database_url: str = DATABASE_URL) -> None:
+    """Run Alembic migrations, bringing the database to head.
 
-    Detects whether this is an existing database (tables present but no
-    alembic_version table) and stamps it as already migrated before running
-    any pending migrations.
+    For a database that predates Alembic (tables present but no alembic_version
+    table) we stamp it to the BASE revision rather than head, then upgrade — so
+    the later column/index migrations actually run instead of being skipped. The
+    migrations are idempotent, so this is safe whether the pre-Alembic schema is
+    old (missing newer columns) or already current.
     """
     import logging
     from alembic.config import Config
     from alembic import command
-    from sqlalchemy import inspect
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import create_engine, inspect
 
     logger = logging.getLogger(__name__)
 
     alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+    alembic_cfg.set_main_option("sqlalchemy.url", database_url)
 
-    inspector = inspect(engine)
-    existing_tables = inspector.get_table_names()
+    insp_engine = create_engine(database_url)
+    try:
+        existing_tables = inspect(insp_engine).get_table_names()
+    finally:
+        insp_engine.dispose()
 
     if "alembic_version" not in existing_tables and len(existing_tables) > 0:
-        logger.info("Existing database detected without Alembic — stamping as migrated")
-        command.stamp(alembic_cfg, "head")
+        base_rev = ScriptDirectory.from_config(alembic_cfg).get_base()
+        logger.info(
+            "Pre-Alembic database detected — stamping to base %s, then upgrading", base_rev
+        )
+        command.stamp(alembic_cfg, base_rev)
 
     logger.info("Running Alembic migrations...")
     command.upgrade(alembic_cfg, "head")

@@ -4,9 +4,11 @@ Each test uses mock PaperlessClient + mock LLMHandler + mock DB session.
 No real network calls or database access.
 """
 
-import pytest
+import asyncio
 import json
 from unittest.mock import patch, AsyncMock, MagicMock
+
+import pytest
 
 # Imports for tasks
 from app.services.steps.ocr_step import OCRStep
@@ -18,6 +20,7 @@ from app.services.steps.tags_step import TagsStep
 from app.services.steps.fields_step import FieldsStep
 from app.services.steps.date_step import DateStep
 from app.services.processor import DocumentProcessor
+from app.services import scheduler as scheduler_service
 from app.services.steps.base import StepContext, StepResult
 from app.models import Prompt
 
@@ -1052,6 +1055,92 @@ class TestDateStep:
 
 
 class TestDocumentProcessorFailureHandling:
+    @pytest.mark.asyncio
+    async def test_running_step_updates_active_processing_state(
+        self, mock_paperless, mock_llm
+    ):
+        mock_llm.provider = "test-provider"
+        mock_llm.model = "test-model"
+        started = asyncio.Event()
+        release = asyncio.Event()
+        scheduler_service._clear_processing()
+        scheduler_service._set_processing()
+
+        class SlowOCRStep:
+            name = "ocr"
+
+            def can_handle(self, tags):
+                return True
+
+            async def execute(self, ctx):
+                started.set()
+                await release.wait()
+                return StepResult(data={}, skipped=True)
+
+            async def update_metadata(self, ctx, result):
+                raise AssertionError("skipped step must not update metadata")
+
+        mock_paperless.get_document = AsyncMock(
+            return_value={
+                "id": 1,
+                "title": "Invoice",
+                "content": "Existing OCR text",
+                "tags": [5, 11],
+                "custom_fields": [],
+            }
+        )
+        mock_paperless.get_tags = AsyncMock(
+            return_value=[
+                {"id": 5, "name": "ai-ocr"},
+                {"id": 11, "name": "force_ocr"},
+            ]
+        )
+
+        processor = DocumentProcessor(paperless=mock_paperless)
+        processor._build_steps = AsyncMock(return_value=[SlowOCRStep()])
+        processor._get_config_dict = AsyncMock(
+            return_value={
+                "modular_tag_ocr": "ai-ocr",
+                "force_ocr_tag": "force_ocr",
+            }
+        )
+        processor._get_config = AsyncMock(
+            side_effect=lambda key, default=None: {
+                "process_tag": "ai-process",
+                "processed_tag": "ai-processed",
+            }.get(key, default)
+        )
+        processor._log_processing = AsyncMock(return_value=123)
+
+        with patch(
+            "app.services.processor.LLMHandlerManager.get_handler",
+            AsyncMock(return_value=mock_llm),
+        ):
+            task = asyncio.create_task(processor.process_document(1))
+            await asyncio.wait_for(started.wait(), timeout=1)
+
+            state = scheduler_service.get_processing_state()
+            assert state["current_document_ids"] == [1]
+            assert "current_doc_id" not in state
+            assert state["active_documents"][0]["trigger_tags"] == [
+                "force_ocr",
+                "ai-ocr",
+            ]
+            assert state["active_documents"][0]["trigger_mode"] == "force_ocr"
+            assert state["active_documents"][0]["active_step"] == "ocr"
+
+            release.set()
+            result = await task
+
+        try:
+            assert result["success"] is True
+            assert result["trigger_tags"] == ["force_ocr", "ai-ocr"]
+            state = scheduler_service.get_processing_state()
+            assert "current_doc_id" not in state
+            assert state["active_documents"] == []
+        finally:
+            scheduler_service._clear_processing()
+
     @pytest.mark.asyncio
     async def test_failed_step_result_skips_finalization_and_logs_failure(
         self, mock_paperless, mock_llm

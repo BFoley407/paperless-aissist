@@ -30,7 +30,9 @@ render_as_batch = True
 
 
 def get_url() -> str:
-    return DATABASE_URL
+    # Honor the URL set on the Alembic config (run_migrations sets it to the
+    # target DB); fall back to the app's default DATABASE_URL.
+    return config.get_main_option("sqlalchemy.url") or DATABASE_URL
 
 
 def run_migrations_offline() -> None:

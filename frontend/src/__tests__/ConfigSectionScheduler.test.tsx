@@ -32,7 +32,8 @@ describe('ConfigSectionScheduler', () => {
         interval_minutes: 5,
         next_run: null,
         is_processing: true,
-        current_doc_id: 77,
+        current_document_ids: [77],
+        active_documents: [],
       },
     })
   })

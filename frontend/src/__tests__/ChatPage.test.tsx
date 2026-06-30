@@ -5,6 +5,7 @@ import ChatPage, { clearChatDocumentCacheForTests } from '../pages/ChatPage'
 const mocks = vi.hoisted(() => ({
   mockGetConfig: vi.fn(),
   mockGetChatList: vi.fn(),
+  mockSearchPaperless: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -13,7 +14,7 @@ vi.mock('../api/client', () => ({
   },
   documentsApi: {
     getChatList: mocks.mockGetChatList,
-    searchPaperless: vi.fn(),
+    searchPaperless: mocks.mockSearchPaperless,
     getChatDocument: vi.fn(),
     getPreview: vi.fn(),
     chat: vi.fn(),
@@ -33,6 +34,11 @@ describe('ChatPage', () => {
     mocks.mockGetChatList.mockResolvedValue({
       data: {
         documents: [{ id: 1, title: 'Invoice 2024', created: '2024-01-15' }],
+      },
+    })
+    mocks.mockSearchPaperless.mockResolvedValue({
+      data: {
+        results: [],
       },
     })
   })
@@ -140,5 +146,28 @@ describe('ChatPage', () => {
     })
     expect(screen.queryByText('chat.manualRefreshTitle')).not.toBeInTheDocument()
     expect(mocks.mockGetChatList).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders more than five document search results', async () => {
+    mocks.mockSearchPaperless.mockResolvedValue({
+      data: {
+        results: Array.from({ length: 7 }, (_, index) => ({
+          id: index + 1,
+          title: `Invoice ${index + 1}`,
+          created: `2026-06-${String(index + 1).padStart(2, '0')}`,
+        })),
+      },
+    })
+
+    render(<ChatPage />)
+
+    fireEvent.change(screen.getByPlaceholderText('chat.searchPlaceholder'), {
+      target: { value: 'invoice' },
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Invoice 7')).toBeInTheDocument()
+    })
+    expect(screen.getAllByText(/Invoice \d/)).toHaveLength(7)
   })
 })

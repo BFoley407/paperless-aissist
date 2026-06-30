@@ -149,6 +149,22 @@ export function ConfigSectionVision({ config, onSave, secretsSet }: ConfigSectio
           />
           <p className={hintClass}>{t('config.llmMaxTokensVisionHint')}</p>
         </div>
+        <div>
+          <label htmlFor="llm-num-ctx-vision" className={labelClass}>
+            {t('config.llmContextWindowVision')}
+          </label>
+          <input
+            id="llm-num-ctx-vision"
+            type="number"
+            min="1"
+            step="1"
+            value={config.llm_num_ctx_vision || ''}
+            onChange={(e) => handleChange('llm_num_ctx_vision', e.target.value)}
+            placeholder="32768"
+            className="w-40 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <p className={hintClass}>{t('config.llmContextWindowVisionHint')}</p>
+        </div>
       </div>
     </div>
   )

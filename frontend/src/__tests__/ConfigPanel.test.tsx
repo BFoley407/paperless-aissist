@@ -81,6 +81,22 @@ describe('ConfigPanel', () => {
     })
   })
 
+  it('renders and saves Ollama context window', async () => {
+    render(<ConfigPanel />)
+
+    fireEvent.click(await screen.findByText('config.tabLLM'))
+    const contextWindow = await screen.findByLabelText('config.llmContextWindow')
+
+    expect(contextWindow).toHaveValue(null)
+
+    fireEvent.change(contextWindow, { target: { value: '16384' } })
+    fireEvent.click(screen.getByText('config.saveConfiguration'))
+
+    await waitFor(() => {
+      expect(mocks.mockSet).toHaveBeenCalledWith('llm_num_ctx', '16384')
+    })
+  })
+
   it('renders and saves OCR fix max chars', async () => {
     render(<ConfigPanel />)
 

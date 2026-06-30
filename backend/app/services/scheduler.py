@@ -11,7 +11,7 @@ import asyncio
 import threading
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ _MAX_CONCURRENT_PROCESSING = 3
 
 scheduler: Optional[AsyncIOScheduler] = None
 job_id = "auto_process_documents"
-lock = threading.Lock()
+lock = threading.RLock()
 
 _lock: Optional[asyncio.Lock] = None
 
@@ -40,44 +40,208 @@ os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "scheduler_state.json")
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _default_state() -> dict[str, Any]:
+    return {
+        "is_processing": False,
+        "started_at": None,
+        "active_documents": [],
+    }
+
+
+def _normalize_state(state: dict[str, Any] | None) -> dict[str, Any]:
+    normalized = _default_state()
+    if isinstance(state, dict):
+        normalized.update(state)
+
+    active_documents = normalized.get("active_documents")
+    if not isinstance(active_documents, list):
+        active_documents = []
+    normalized["active_documents"] = [
+        doc
+        for doc in active_documents
+        if isinstance(doc, dict) and doc.get("document_id") is not None
+    ]
+
+    return normalized
+
+
+def _running_seconds(started_at: Optional[str]) -> Optional[float]:
+    if not started_at:
+        return None
+    try:
+        parsed = datetime.fromisoformat(started_at)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return round((datetime.now(timezone.utc) - parsed).total_seconds(), 1)
+    except ValueError:
+        return None
+
+
+def _active_document_payload(
+    doc_id: int,
+    trigger_tags: Optional[list[str]] = None,
+    trigger_mode: Optional[str] = None,
+    active_step: Optional[str] = None,
+    started_at: Optional[str] = None,
+) -> dict[str, Any]:
+    clean_trigger_tags = [tag for tag in (trigger_tags or []) if tag]
+    return {
+        "document_id": doc_id,
+        "trigger_tags": clean_trigger_tags,
+        "trigger_mode": trigger_mode
+        or (clean_trigger_tags[0] if clean_trigger_tags else None),
+        "active_step": active_step,
+        "started_at": started_at or _now_iso(),
+    }
+
+
 def _load_state() -> dict:
     try:
         if os.path.exists(STATE_FILE):
             with open(STATE_FILE, "r") as f:
-                return json.load(f)
+                return _normalize_state(json.load(f))
     except Exception as e:
         logger.error(f"Failed to load state: {e}")
-    return {"is_processing": False, "current_doc_id": None, "started_at": None}
+    return _default_state()
 
 
 def _save_state(state: dict):
     try:
-        with open(STATE_FILE, "w") as f:
+        tmp_file = f"{STATE_FILE}.tmp"
+        with open(tmp_file, "w") as f:
             json.dump(state, f)
+        os.replace(tmp_file, STATE_FILE)
     except Exception as e:
         logger.error(f"Failed to save state: {e}")
 
 
-def _set_processing(doc_id: Optional[int] = None):
-    state = _load_state()
-    state["is_processing"] = True
-    state["current_doc_id"] = doc_id
-    state["started_at"] = datetime.now(timezone.utc).isoformat()
-    _save_state(state)
+def _set_processing(
+    doc_id: Optional[int] = None,
+    trigger_tags: Optional[list[str]] = None,
+    trigger_mode: Optional[str] = None,
+):
+    with lock:
+        started_at = _now_iso()
+        active_documents = []
+        if doc_id is not None:
+            active_documents.append(
+                _active_document_payload(
+                    doc_id,
+                    trigger_tags=trigger_tags,
+                    trigger_mode=trigger_mode,
+                    started_at=started_at,
+                )
+            )
+        state = {
+            "is_processing": True,
+            "started_at": started_at,
+            "active_documents": active_documents,
+        }
+        _save_state(state)
 
 
 def _clear_processing():
     """Reset the processing state file (called after each run or on interrupt)."""
-    state = _load_state()
-    state["is_processing"] = False
-    state["current_doc_id"] = None
-    state["started_at"] = None
-    _save_state(state)
+    with lock:
+        state = _default_state()
+        _save_state(state)
+
+
+def mark_document_started(
+    doc_id: int,
+    trigger_tags: Optional[list[str]] = None,
+    trigger_mode: Optional[str] = None,
+    active_step: Optional[str] = None,
+):
+    """Record a document as actively processing within the current run."""
+    with lock:
+        state = _load_state()
+        if not state.get("started_at"):
+            state["started_at"] = _now_iso()
+        state["is_processing"] = True
+
+        active_documents = [
+            doc
+            for doc in state.get("active_documents", [])
+            if doc.get("document_id") != doc_id
+        ]
+        active_documents.append(
+            _active_document_payload(
+                doc_id,
+                trigger_tags=trigger_tags,
+                trigger_mode=trigger_mode,
+                active_step=active_step,
+            )
+        )
+        state["active_documents"] = active_documents
+        _save_state(state)
+
+
+def update_active_document(
+    doc_id: int,
+    trigger_tags: Optional[list[str]] = None,
+    trigger_mode: Optional[str] = None,
+    active_step: Optional[str] = None,
+):
+    """Update metadata for an active document without resetting its timer."""
+    with lock:
+        state = _load_state()
+        active_documents = state.get("active_documents", [])
+        for doc in active_documents:
+            if doc.get("document_id") != doc_id:
+                continue
+            if trigger_tags is not None:
+                doc["trigger_tags"] = [tag for tag in trigger_tags if tag]
+            if trigger_mode is not None:
+                doc["trigger_mode"] = trigger_mode
+            if active_step is not None:
+                doc["active_step"] = active_step
+            break
+        state["active_documents"] = active_documents
+        _save_state(state)
+
+
+def mark_document_finished(doc_id: int):
+    """Remove a document from the active processing list."""
+    with lock:
+        state = _load_state()
+        active_documents = [
+            doc
+            for doc in state.get("active_documents", [])
+            if doc.get("document_id") != doc_id
+        ]
+        state["active_documents"] = active_documents
+        _save_state(state)
+
+
+def get_processing_state() -> dict[str, Any]:
+    """Return normalized processing state with computed runtime fields."""
+    with lock:
+        state = _load_state()
+
+    active_documents = []
+    for doc in state.get("active_documents", []):
+        active_doc = dict(doc)
+        active_doc["running_seconds"] = _running_seconds(active_doc.get("started_at"))
+        active_documents.append(active_doc)
+
+    state["active_documents"] = active_documents
+    state["current_document_ids"] = [
+        doc["document_id"] for doc in active_documents
+    ]
+    state["running_seconds"] = _running_seconds(state.get("started_at"))
+    return state
 
 
 def is_currently_processing() -> tuple[bool, Optional[int]]:
-    state = _load_state()
-    return state.get("is_processing", False), state.get("current_doc_id")
+    state = get_processing_state()
+    current_document_ids = state.get("current_document_ids", [])
+    first_doc_id = current_document_ids[0] if current_document_ids else None
+    return state.get("is_processing", False), first_doc_id
 
 
 def load_scheduler_config() -> tuple[bool, int]:
@@ -209,15 +373,18 @@ def get_scheduler_status() -> dict:
     """Return current scheduler status including running state and next run time."""
     global scheduler
 
-    is_processing, current_doc_id = is_currently_processing()
+    processing_state = get_processing_state()
 
     if scheduler is None or not scheduler.running:
         return {
             "running": False,
             "interval_minutes": None,
             "next_run": None,
-            "is_processing": is_processing,
-            "current_doc_id": current_doc_id,
+            "is_processing": processing_state["is_processing"],
+            "current_document_ids": processing_state["current_document_ids"],
+            "active_documents": processing_state["active_documents"],
+            "started_at": processing_state["started_at"],
+            "running_seconds": processing_state["running_seconds"],
         }
 
     job = scheduler.get_job(job_id)
@@ -226,16 +393,22 @@ def get_scheduler_status() -> dict:
             "running": True,
             "interval_minutes": job.trigger.interval.total_seconds() / 60,
             "next_run": job.next_run_time.isoformat(),
-            "is_processing": is_processing,
-            "current_doc_id": current_doc_id,
+            "is_processing": processing_state["is_processing"],
+            "current_document_ids": processing_state["current_document_ids"],
+            "active_documents": processing_state["active_documents"],
+            "started_at": processing_state["started_at"],
+            "running_seconds": processing_state["running_seconds"],
         }
 
     return {
         "running": False,
         "interval_minutes": None,
         "next_run": None,
-        "is_processing": is_processing,
-        "current_doc_id": current_doc_id,
+        "is_processing": processing_state["is_processing"],
+        "current_document_ids": processing_state["current_document_ids"],
+        "active_documents": processing_state["active_documents"],
+        "started_at": processing_state["started_at"],
+        "running_seconds": processing_state["running_seconds"],
     }
 
 
@@ -267,7 +440,9 @@ def try_trigger_processing() -> tuple[bool, str]:
     with lock:
         is_running, doc_id = is_currently_processing()
         if is_running:
-            return False, f"Already processing document #{doc_id}"
+            if doc_id is not None:
+                return False, f"Already processing document #{doc_id}"
+            return False, "Already processing documents"
         _set_processing()
 
     return True, "Processing started"

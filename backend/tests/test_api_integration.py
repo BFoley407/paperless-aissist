@@ -470,3 +470,29 @@ def test_metadata_routes_pass_refresh_to_paperless_client(client):
         "force_refresh": True
     }
     assert paperless.get_tags.call_args_list[1].kwargs == {"force_refresh": True}
+
+
+def test_document_search_returns_more_than_five_results(client):
+    paperless = MagicMock()
+    paperless.list_documents = AsyncMock(
+        return_value=[
+            {
+                "id": doc_id,
+                "title": f"Invoice {doc_id}",
+                "created": f"2026-06-{doc_id:02d}",
+            }
+            for doc_id in range(1, 8)
+        ]
+    )
+
+    with patch(
+        "app.routers.documents.PaperlessClientManager.get_client",
+        AsyncMock(return_value=paperless),
+    ):
+        response = client.get("/api/documents/search?query=invoice")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["results"]) == 7
+    assert data["results"][-1]["title"] == "Invoice 7"
+    paperless.list_documents.assert_awaited_once_with(search="invoice")

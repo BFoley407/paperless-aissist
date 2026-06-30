@@ -27,6 +27,7 @@ describe('ConfigSectionLLM', () => {
           llm_provider: 'openrouter',
           llm_temperature: '0.4',
           llm_max_tokens: '512',
+          llm_num_ctx: '16384',
         }}
         onSave={vi.fn()}
         secretsSet={[]}
@@ -37,5 +38,7 @@ describe('ConfigSectionLLM', () => {
     expect(screen.getByDisplayValue('0.4')).toBeInTheDocument()
     expect(screen.getByText('config.llmMaxTokens')).toBeInTheDocument()
     expect(screen.getByDisplayValue('512')).toBeInTheDocument()
+    expect(screen.getByText('config.llmContextWindow')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('16384')).toBeInTheDocument()
   })
 })

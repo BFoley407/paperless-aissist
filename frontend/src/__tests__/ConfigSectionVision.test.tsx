@@ -32,6 +32,7 @@ describe('ConfigSectionVision', () => {
           llm_provider_vision: 'openrouter',
           llm_temperature_vision: '0.2',
           llm_max_tokens_vision: '1024',
+          llm_num_ctx_vision: '32768',
         }}
         onSave={vi.fn()}
         secretsSet={[]}
@@ -42,5 +43,7 @@ describe('ConfigSectionVision', () => {
     expect(screen.getByDisplayValue('0.2')).toBeInTheDocument()
     expect(screen.getByText('config.llmMaxTokensVision')).toBeInTheDocument()
     expect(screen.getByDisplayValue('1024')).toBeInTheDocument()
+    expect(screen.getByText('config.llmContextWindowVision')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('32768')).toBeInTheDocument()
   })
 })
