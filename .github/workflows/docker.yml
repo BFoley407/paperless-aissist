@@ -72,12 +72,3 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      # Update the repository description on Docker Hub with content from README.md
-      - name: Update Docker Hub description
-        uses: peter-evans/dockerhub-description@v5
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: bfoley407/paperless-aissist
-          readme-filepath: ./README.md
