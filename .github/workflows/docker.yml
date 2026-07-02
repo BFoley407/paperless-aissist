@@ -48,7 +48,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: nyxtronlab/paperless-aissist
+          images: bfoley407/paperless-aissist
           tags: |
             # Always add the git tag (e.g. v1.2.3 or v1.2.3-dev)
             type=ref,event=tag
@@ -79,5 +79,5 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: nyxtronlab/paperless-aissist
+          repository: bfoley407/paperless-aissist
           readme-filepath: ./README.md

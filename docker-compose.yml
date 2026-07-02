@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   paperless-aissist:
-    image: nyxtronlab/paperless-aissist:latest
+    image: bfoley407/paperless-aissist:latest
     container_name: paperless-aissist
     ports:
       - "8000:8080"
