@@ -31,6 +31,30 @@ def sanitize_prompt_text(text: str) -> str:
     return text.translate(PROMPT_CONTROL_CHARS_TO_REMOVE)
 
 
+def parse_json_response(content: str) -> dict[str, Any]:
+    """Parse a JSON object out of a model response.
+
+    Some models (notably smaller Ollama models) occasionally prepend or
+    append stray text around the JSON object even when JSON mode is
+    requested, e.g. 'created{"created_date": ...}'. Fall back to extracting
+    the outermost {...} substring before giving up.
+    """
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    start = content.find("{")
+    end = content.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(content[start : end + 1])
+        except json.JSONDecodeError:
+            pass
+
+    return {"raw": content}
+
+
 class LLMHandler:
     """HTTP client for LLM inference via Ollama or OpenAI-compatible APIs.
 
@@ -293,10 +317,7 @@ class LLMHandler:
             )
 
             if json_mode:
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    return {"raw": content}
+                return parse_json_response(content)
 
             return {"text": content}
         except httpx.HTTPError as e:
@@ -345,10 +366,7 @@ class LLMHandler:
             logger.debug(f"OpenAI response[:300]={content[:300]!r} tokens={usage}")
 
             if json_mode:
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    return {"raw": content}
+                return parse_json_response(content)
 
             return {"text": content}
         except httpx.HTTPError as e:
@@ -475,10 +493,7 @@ class LLMHandler:
         full_text = "\n\n".join(combined_text)
 
         if json_mode:
-            try:
-                return json.loads(full_text)
-            except json.JSONDecodeError:
-                return {"raw": full_text}
+            return parse_json_response(full_text)
 
         return {"text": full_text}
 
@@ -540,10 +555,7 @@ class LLMHandler:
 
                 full_text = "\n\n".join(combined_text)
                 if json_mode:
-                    try:
-                        return json.loads(full_text)
-                    except json.JSONDecodeError:
-                        return {"raw": full_text}
+                    return parse_json_response(full_text)
                 return {"text": full_text}
 
             logger.info("OpenAI Vision: sending PDF natively (all pages)")
@@ -583,10 +595,7 @@ class LLMHandler:
             text_content = data["choices"][0]["message"]["content"].strip()
 
             if json_mode:
-                try:
-                    return json.loads(text_content)
-                except json.JSONDecodeError:
-                    return {"raw": text_content}
+                return parse_json_response(text_content)
 
             return {"text": text_content}
         except httpx.HTTPError as e:
